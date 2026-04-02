@@ -1,0 +1,12 @@
+fastapi>=0.100.0
+uvicorn>=0.23.0
+websockets>=11.0.3
+python-nmap>=0.7.1
+scapy>=2.5.0
+zeroconf>=0.115.0
+reportlab>=4.0.0
+aiofiles>=23.2.1
+sqlalchemy>=2.0.0
+python-multipart>=0.0.6
+bleak>=0.21.1
+pyserial>=3.5

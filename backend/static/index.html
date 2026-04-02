@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pentex One - IoT Security Auditor</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-shield-halved neon-icon"></i>
+                <h2>Pentex One</h2>
+            </div>
+            <ul class="nav-links">
+                <li id="nav-dashboard" class="active"><a href="#" onclick="app.switchView('dashboard')"><i
+                            class="fa-solid fa-chart-pie"></i> Dashboard</a></li>
+                <li id="nav-rfid"><a href="#" onclick="app.switchView('rfid')"><i class="fa-solid fa-id-card"></i>
+                        Access Control (RFID)</a></li>
+                <li id="nav-reports"><a href="#" onclick="app.switchView('reports')"><i
+                            class="fa-solid fa-file-pdf"></i> PDF Reports</a></li>
+                <li id="nav-settings"><a href="#" onclick="app.switchView('settings')"><i class="fa-solid fa-gear"></i>
+                        Settings</a></li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="top-nav">
+                <div class="title-area">
+                    <h1 id="pageTitle">IoT Security Auditor</h1>
+                    <p class="subtitle" id="pageSubtitle">Monitor and secure your connected smart home environment</p>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-danger" onclick="app.clearData()">
+                        <i class="fa-solid fa-trash"></i> Clear Data
+                    </button>
+                </div>
+            </header>
+
+            <!-- ================= VIEW: DASHBOARD ================= -->
+            <div id="view-dashboard" class="view-section">
+                <!-- Scanning Controls -->
+                <section class="scan-controls glass-panel" style="margin-bottom: 20px;">
+                    <div class="control-group">
+                        <h3><i class="fa-solid fa-wifi text-blue"></i> Wi-Fi & IP Network</h3>
+                        <div class="input-action">
+                            <input type="text" id="networkInput" value="192.168.1.0/24">
+                            <button class="btn btn-outline-blue" onclick="app.startScan('wifi')">Scan IP</button>
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <h3><i class="fa-brands fa-bluetooth text-blue"></i> Bluetooth (BLE)</h3>
+                        <button class="btn btn-outline-blue full-width" onclick="app.startScan('bluetooth')">Scan BLE
+                            Devices</button>
+                    </div>
+
+                    <div class="control-group">
+                        <h3><i class="fa-brands fa-zigbee text-orange"></i> Zigbee Protocol</h3>
+                        <button class="btn btn-outline-orange full-width" onclick="app.startScan('zigbee')">Sniff
+                            Zigbee</button>
+                    </div>
+
+                    <div class="control-group">
+                        <h3><i class="fa-solid fa-hubspot text-purple"></i> Matter (mDNS)</h3>
+                        <button class="btn btn-outline-purple full-width" onclick="app.startScan('matter')">Discover
+                            Matter</button>
+                    </div>
+                </section>
+
+                <!-- Progress Bar -->
+                <div id="scanProgressContainer" class="progress-container hidden" style="margin-bottom: 20px;">
+                    <div class="progress-header">
+                        <span id="scanStatusText">Scanning in progress...</span>
+                        <span class="spinner"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div id="scanProgressBar" class="progress-bar-fill"></div>
+                    </div>
+                </div>
+
+                <!-- Dashboard Stats -->
+                <section class="stats-grid" style="margin-bottom: 24px;">
+                    <div class="stat-card glass-panel total">
+                        <div class="stat-icon"><i class="fa-solid fa-microchip"></i></div>
+                        <div class="stat-info">
+                            <h3>Total Devices</h3>
+                            <h2 id="sTotal">0</h2>
+                        </div>
+                    </div>
+                    <div class="stat-card glass-panel safe">
+                        <div class="stat-icon"><i class="fa-solid fa-shield-check"></i></div>
+                        <div class="stat-info">
+                            <h3>Secure (SAFE)</h3>
+                            <h2 id="sSafe">0</h2>
+                        </div>
+                    </div>
+                    <div class="stat-card glass-panel medium">
+                        <div class="stat-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                        <div class="stat-info">
+                            <h3>Attention (MEDIUM)</h3>
+                            <h2 id="sMedium">0</h2>
+                        </div>
+                    </div>
+                    <div class="stat-card glass-panel risk">
+                        <div class="stat-icon"><i class="fa-solid fa-skull-crossbones"></i></div>
+                        <div class="stat-info">
+                            <h3>Vulnerable (RISK)</h3>
+                            <h2 id="sRisk">0</h2>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Pie Chart -->
+                <div class="glass-panel"
+                    style="margin-bottom: 24px; display: flex; align-items: center; gap: 30px; padding: 20px 28px;">
+                    <div style="width: 160px; height: 160px; flex-shrink: 0;">
+                        <canvas id="riskPieChart"></canvas>
+                    </div>
+                    <div>
+                        <h3 style="margin-bottom: 10px; color: var(--text-primary);">Security Distribution</h3>
+                        <p style="color: var(--text-muted); font-size: 13px;">Real-time breakdown of your network's
+                            security posture across all discovered devices.</p>
+                        <div style="margin-top: 14px; display: flex; gap: 20px; flex-wrap: wrap;">
+                            <span style="font-size: 12px;"><span
+                                    style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;margin-right:6px;"></span>Safe</span>
+                            <span style="font-size: 12px;"><span
+                                    style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#f59e0b;margin-right:6px;"></span>Medium</span>
+                            <span style="font-size: 12px;"><span
+                                    style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444;margin-right:6px;"></span>Risk</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Layout: Table and Details inside Dashboard -->
+                <div class="dashboard-layout">
+                    <!-- Devices Table -->
+                    <div class="devices-list glass-panel">
+                        <div class="panel-header">
+                            <h2>Discovered Devices</h2>
+                            <button class="btn btn-icon" onclick="app.fetchDevices()"><i
+                                    class="fa-solid fa-rotate-right"></i></button>
+                        </div>
+                        <div class="table-responsive">
+                            <table id="devicesTable">
+                                <thead>
+                                    <tr>
+                                        <th>Protocol</th>
+                                        <th>IP / MAC Address</th>
+                                        <th>Hostname & Vendor</th>
+                                        <th>Security Level</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="devicesTableBody">
+                                    <!-- Devices will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Device Details (Right Panel) -->
+                    <div class="device-details glass-panel" id="deviceDetailsPanel">
+                        <div class="empty-state" id="detailsEmptyState">
+                            <i class="fa-solid fa-hand-pointer"></i>
+                            <p>Select a device to view deep vulnerability analysis</p>
+                        </div>
+
+                        <div id="detailsContent" class="hidden">
+                            <div class="detail-header">
+                                <div class="detail-icon" id="detailIcon">
+                                    <i class="fa-solid fa-laptop"></i>
+                                </div>
+                                <div class="detail-title">
+                                    <h2 id="detailHostname">Unknown Device</h2>
+                                    <p id="detailIp">192.168.1.x</p>
+                                </div>
+                                <div class="risk-badge" id="detailRiskBadge">SAFE</div>
+                            </div>
+
+                            <div class="detail-metrics">
+                                <div class="metric">
+                                    <span class="label">Vendor</span>
+                                    <span class="value" id="detailVendor">Apple</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="label">OS Guess</span>
+                                    <span class="value" id="detailOs">iOS</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="label">Open Ports</span>
+                                    <span class="value" id="detailPorts">80, 443</span>
+                                </div>
+                            </div>
+
+                            <div class="action-buttons">
+                                <button class="btn btn-outline-blue w-half" onclick="app.testPorts()">Deep Port
+                                    Scan</button>
+                                <button class="btn btn-outline-red w-half" onclick="app.testCreds()">Test Default
+                                    Creds</button>
+                            </div>
+
+                            <h3 class="section-title">Vulnerabilities</h3>
+                            <div class="vuln-list" id="vulnList">
+                                <!-- vulnerabilities here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= VIEW: RFID ================= -->
+            <div id="view-rfid" class="view-section hidden">
+                <div class="glass-panel" style="margin-bottom: 20px;">
+                    <button class="btn btn-primary" onclick="app.scanRfid()"><i class="fa-solid fa-wifi"></i> Start RFID
+                        Scan</button>
+                    <button class="btn btn-outline-red" onclick="app.clearCards()"><i class="fa-solid fa-trash"></i>
+                        Clear Cards</button>
+                    <span id="rfidStatus" style="margin-left: 20px; color: var(--text-muted);">Ready to scan.</span>
+                </div>
+
+                <div class="glass-panel">
+                    <h2>Scanned Cards</h2>
+                    <div class="table-responsive">
+                        <table id="cardsTable">
+                            <thead>
+                                <tr>
+                                    <th>UID</th>
+                                    <th>Card Type</th>
+                                    <th>Risk Level</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cardsTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= VIEW: REPORTS ================= -->
+            <div id="view-reports" class="view-section hidden">
+                <div class="glass-panel" style="text-align: center; padding: 50px;">
+                    <i class="fa-solid fa-file-pdf"
+                        style="font-size: 64px; margin-bottom: 20px; color: var(--accent-red);"></i>
+                    <h2>Generate Comprehensive Report</h2>
+                    <p style="color: var(--text-muted); margin-bottom: 30px;">
+                        Export all scanned Wi-Fi, BLE, Zigbee devices, and RFID cards along with vulnerability details
+                        into a PDF document.
+                    </p>
+                    <button class="btn btn-primary btn-lg" onclick="app.downloadReport()">
+                        <i class="fa-solid fa-download"></i> Download Report (PDF)
+                    </button>
+                </div>
+            </div>
+
+            <!-- ================= VIEW: SETTINGS ================= -->
+            <div id="view-settings" class="view-section hidden">
+                <div class="glass-panel">
+                    <h2>System Settings</h2>
+                    <div style="margin-top: 20px;">
+                        <label style="display:flex; align-items:center; gap: 10px; margin-bottom: 15px;">
+                            <input type="checkbox" id="settingSimMode" onchange="app.saveSettings()">
+                            <span><strong>Enable Simulation Mode</strong> — Uses mock data for RFID/Zigbee if hardware
+                                is disconnected</span>
+                        </label>
+                        <div class="input-action" style="max-width: 300px;">
+                            <span style="align-self:center; margin-right: 10px;">Nmap Timeout (s):</span>
+                            <input type="number" id="settingTimeout" onchange="app.saveSettings()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+    <!-- Toast Notification Container -->
+    <div id="toastContainer"
+        style="position:fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 10px;">
+    </div>
+    <script>
+        // Auth check — redirect to login if not authenticated
+        if (sessionStorage.getItem('pentex_auth') !== 'true') {
+            window.location.href = '/login';
+        }
+    </script>
+</body>
+
+</html>
