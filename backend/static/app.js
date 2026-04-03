@@ -5,8 +5,11 @@ const app = {
     selectedDevice: null,
     scanInterval: null,
     rfidCards: [],
+    ws: null,
 
     riskChart: null,
+    protocolChart: null,
+    timelineData: [],
 
     init() {
         this.fetchSummary();
@@ -14,13 +17,20 @@ const app = {
         this.fetchCards();
         this.initNetworkSelect();
         this.initCharts();
+        this.initWebSocket();
         this.discoverNetworks(); // لقط الشبكات تلقائي عند البداية
+        this.fetchHardwareStatus();
     },
 
-    initChart() {
-        const ctx = document.getElementById('riskPieChart').getContext('2d');
+    initCharts() {
+        this.initRiskChart();
+        this.initProtocolChart();
+    },
+
+    initRiskChart() {
+        const ctx = document.getElementById('riskPieChart');
         if (!ctx) return;
-        this.riskChart = new Chart(ctx, {
+        this.riskChart = new Chart(ctx.getContext('2d'), {
             type: 'doughnut',
             data: {
                 labels: ['Safe', 'Medium', 'Risk'],
@@ -40,6 +50,86 @@ const app = {
                 maintainAspectRatio: false
             }
         });
+    },
+
+    initProtocolChart() {
+        const ctx = document.getElementById('protocolChart');
+        if (!ctx) return;
+        this.protocolChart = new Chart(ctx.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: ['Wi-Fi', 'Bluetooth', 'Zigbee', 'Thread', 'Z-Wave', 'LoRaWAN', 'RFID'],
+                datasets: [{
+                    label: 'Devices',
+                    data: [0, 0, 0, 0, 0, 0, 0],
+                    backgroundColor: [
+                        'rgba(59, 130, 246, 0.8)',
+                        'rgba(59, 130, 246, 0.8)',
+                        'rgba(245, 158, 11, 0.8)',
+                        'rgba(139, 92, 246, 0.8)',
+                        'rgba(236, 72, 153, 0.8)',
+                        'rgba(20, 184, 166, 0.8)',
+                        'rgba(239, 68, 68, 0.8)'
+                    ],
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: '#94a3b8' },
+                        grid: { color: 'rgba(148, 163, 184, 0.1)' }
+                    },
+                    x: {
+                        ticks: { color: '#94a3b8' },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    },
+
+    initWebSocket() {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        this.ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
+        
+        this.ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            this.handleWebSocketMessage(data);
+        };
+        
+        this.ws.onclose = () => {
+            // Reconnect after 5 seconds
+            setTimeout(() => this.initWebSocket(), 5000);
+        };
+    },
+
+    handleWebSocketMessage(data) {
+        if (data.event === 'heartbeat') return;
+        
+        if (data.event === 'device_found') {
+            this.showToast(`New device discovered: ${data.device.hostname}`, 'info');
+            this.fetchDevices();
+            this.fetchSummary();
+        } else if (data.event === 'vulnerability_found') {
+            this.showToast(`Vulnerability detected: ${data.vulnerability.vuln_type}`, 'risk');
+            this.fetchDevices();
+        } else if (data.event === 'scan_progress') {
+            this.updateScanProgress(data.progress, data.message);
+        }
+    },
+
+    updateScanProgress(progress, message) {
+        const statusText = document.getElementById("scanStatusText");
+        const progressBar = document.getElementById("scanProgressBar");
+        if (statusText) statusText.textContent = message;
+        if (progressBar) progressBar.style.width = `${progress}%`;
     },
 
     showToast(msg, type = 'info') {
@@ -158,7 +248,7 @@ const app = {
                 if (document.getElementById("sMedium")) document.getElementById("sMedium").textContent = data.medium_count;
                 if (document.getElementById("sRisk")) document.getElementById("sRisk").textContent = data.risk_count;
 
-                // Update Chart
+                // Update Risk Chart
                 if (this.riskChart) {
                     this.riskChart.data.datasets[0].data = [data.safe_count, data.medium_count, data.risk_count];
                     this.riskChart.update();
@@ -174,12 +264,48 @@ const app = {
         }
     },
 
+    updateProtocolChart() {
+        if (!this.protocolChart) return;
+        
+        const protocolCounts = {
+            'Wi-Fi': 0,
+            'Bluetooth': 0,
+            'Zigbee': 0,
+            'Thread': 0,
+            'Matter': 0,
+            'Z-Wave': 0,
+            'LoRaWAN': 0,
+            'RFID': 0
+        };
+        
+        this.devices.forEach(device => {
+            if (protocolCounts.hasOwnProperty(device.protocol)) {
+                protocolCounts[device.protocol]++;
+            }
+        });
+        
+        // Merge Matter into Thread for display
+        const displayData = [
+            protocolCounts['Wi-Fi'],
+            protocolCounts['Bluetooth'],
+            protocolCounts['Zigbee'],
+            protocolCounts['Thread'] + protocolCounts['Matter'],
+            protocolCounts['Z-Wave'],
+            protocolCounts['LoRaWAN'],
+            protocolCounts['RFID']
+        ];
+        
+        this.protocolChart.data.datasets[0].data = displayData;
+        this.protocolChart.update();
+    },
+
     async fetchDevices() {
         try {
             const res = await fetch(`${API_BASE}/iot/devices`);
             if (res.ok) {
                 this.devices = await res.json();
                 this.renderDevicesTable();
+                this.updateProtocolChart();
             }
         } catch (e) {
             console.error("Failed to fetch devices", e);
