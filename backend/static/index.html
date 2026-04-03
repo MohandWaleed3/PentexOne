@@ -55,9 +55,19 @@
                 <section class="scan-controls glass-panel" style="margin-bottom: 20px;">
                     <div class="control-group">
                         <h3><i class="fa-solid fa-wifi text-blue"></i> Wi-Fi & IP Network</h3>
-                        <div class="input-action">
-                            <input type="text" id="networkInput" value="192.168.1.0/24">
-                            <button class="btn btn-outline-blue" onclick="app.startScan('wifi')">Scan IP</button>
+                        <div class="network-discovery">
+                            <div class="input-action">
+                                <select id="networkSelect" class="network-select">
+                                    <option value="">Discover networks...</option>
+                                </select>
+                                <button class="btn btn-outline-blue" onclick="app.discoverNetworks()">
+                                    <i class="fa-solid fa-search"></i> Discover
+                                </button>
+                            </div>
+                            <div class="input-action" style="margin-top: 10px;">
+                                <input type="text" id="networkInput" value="192.168.1.0/24" placeholder="Or enter network manually">
+                                <button class="btn btn-outline-blue" onclick="app.startScan('wifi')">Scan IP</button>
+                            </div>
                         </div>
                     </div>
 

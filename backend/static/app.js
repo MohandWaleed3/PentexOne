@@ -12,11 +12,8 @@ const app = {
         this.fetchSummary();
         this.fetchDevices();
         this.fetchCards();
-        this.fetchSettings();
-        this.initChart();
-        
-        // Refresh summary every 10 seconds
-        setInterval(() => this.fetchSummary(), 10000);
+        this.initNetworkSelect();
+        this.initCharts();
     },
 
     initChart() {
@@ -288,6 +285,57 @@ const app = {
         }
     },
 
+    // Update input field when selection changes
+    initNetworkSelect() {
+        const networkSelect = document.getElementById("networkSelect");
+        if (networkSelect) {
+            networkSelect.addEventListener("change", function() {
+                document.getElementById("networkInput").value = this.value;
+            });
+        }
+    },
+
+    async discoverNetworks() {
+        const networkSelect = document.getElementById("networkSelect");
+        const discoverBtn = document.querySelector('[onclick="app.discoverNetworks()"]');
+        
+        // Show loading state
+        discoverBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Discovering...';
+        discoverBtn.disabled = true;
+        
+        try {
+            const res = await fetch(`${API_BASE}/iot/networks/discover`);
+            const data = await res.json();
+            
+            // Clear existing options
+            networkSelect.innerHTML = '<option value="">Select a network...</option>';
+            
+            // Add discovered networks
+            data.networks.forEach(network => {
+                const option = document.createElement('option');
+                option.value = network.network;
+                option.textContent = `${network.network} (${network.interface} - ${network.type})`;
+                networkSelect.appendChild(option);
+            });
+            
+            // Auto-select first network if available
+            if (data.networks.length > 0) {
+                networkSelect.value = data.networks[0].network;
+                // Update the input field too
+                document.getElementById("networkInput").value = data.networks[0].network;
+            }
+            
+        } catch (e) {
+            console.error('Network discovery failed:', e);
+            // Show error in select
+            networkSelect.innerHTML = '<option value="">Discovery failed</option>';
+        } finally {
+            // Reset button
+            discoverBtn.innerHTML = '<i class="fa-solid fa-search"></i> Discover';
+            discoverBtn.disabled = false;
+        }
+    },
+
     async startScan(type) {
         const progressContainer = document.getElementById("scanProgressContainer");
         const statusText = document.getElementById("scanStatusText");
@@ -300,7 +348,17 @@ const app = {
         let body = null;
 
         if (type === 'wifi') {
-            const network = document.getElementById("networkInput").value;
+            // Check if network is selected from dropdown
+            const networkSelect = document.getElementById("networkSelect");
+            const networkInput = document.getElementById("networkInput");
+            
+            const network = networkSelect.value || networkInput.value;
+            if (!network) {
+                statusText.textContent = "Please select or enter a network range";
+                setTimeout(()=> progressContainer.classList.add("hidden"), 3000);
+                return;
+            }
+            
             url = `${API_BASE}/iot/scan/wifi`;
             body = JSON.stringify({ network: network, timeout: 60 });
         } else if (type === 'matter') {

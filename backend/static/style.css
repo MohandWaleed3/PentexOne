@@ -75,6 +75,44 @@ body {
     list-style: none;
 }
 
+/* Network Discovery Styles */
+.network-discovery {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.network-select {
+    flex: 1;
+    padding: 12px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-panel);
+    color: var(--text-main);
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.network-select:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.input-action {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.input-action input {
+    flex: 1;
+}
+
+.input-action button {
+    white-space: nowrap;
+}
+
 .nav-links li {
     margin-bottom: 8px;
 }
