@@ -518,3 +518,98 @@ tr:hover td {
     transition: width 0.3s ease;
     box-shadow: 0 0 10px var(--accent-blue);
 }
+
+/* Hardware Status Items */
+.hw-status-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    background: rgba(0,0,0,0.2);
+}
+
+.hw-status-item.connected {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--status-safe);
+}
+
+.hw-status-item.disconnected {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--status-risk);
+}
+
+.hw-status-item i {
+    font-size: 14px;
+}
+
+/* Additional Button Styles */
+.btn-lg {
+    padding: 14px 24px;
+    font-size: 15px;
+}
+
+.btn-outline-green {
+    background: transparent;
+    border: 1px solid var(--status-safe);
+    color: var(--status-safe);
+}
+.btn-outline-green:hover { background: rgba(16, 185, 129, 0.1); }
+
+.btn-outline-pink {
+    background: transparent;
+    border: 1px solid #EC4899;
+    color: #EC4899;
+}
+.btn-outline-pink:hover { background: rgba(236, 72, 153, 0.1); }
+
+.btn-outline-teal {
+    background: transparent;
+    border: 1px solid #14B8A6;
+    color: #14B8A6;
+}
+.btn-outline-teal:hover { background: rgba(20, 184, 166, 0.1); }
+
+/* Text Colors */
+.text-pink { color: #EC4899; }
+.text-teal { color: #14B8A6; }
+
+/* Scan Controls Update for more protocols */
+.scan-controls {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    padding: 20px;
+}
+
+@media (max-width: 1400px) {
+    .scan-controls {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .scan-controls {
+        grid-template-columns: 1fr;
+    }
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Toast Animations */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.toast-msg {
+    animation: slideIn 0.3s ease-out;
+}

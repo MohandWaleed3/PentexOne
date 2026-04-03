@@ -10,3 +10,11 @@ sqlalchemy>=2.0.0
 python-multipart>=0.0.6
 bleak>=0.21.1
 pyserial>=3.5
+
+# Optional hardware support
+killerbee>=1.9.0  # Zigbee sniffing (optional)
+cryptography>=41.0.0  # TLS certificate parsing
+
+# Additional IoT protocol support (optional)
+# pyserial-asyncio>=0.6  # For async serial communication
+# pyzwave>=0.1.0  # Z-Wave support (if available)

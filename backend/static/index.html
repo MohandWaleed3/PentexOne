@@ -96,9 +96,19 @@
                     </div>
 
                     <div class="control-group">
-                        <h3><i class="fa-solid fa-hubspot text-purple"></i> Matter (mDNS)</h3>
-                        <button class="btn btn-outline-purple full-width" onclick="app.startScan('matter')">Discover
-                            Matter</button>
+                        <h3><i class="fa-solid fa-hubspot text-purple"></i> Thread/Matter</h3>
+                        <button class="btn btn-outline-purple full-width" onclick="app.startScan('thread')">Discover Thread</button>
+                        <button class="btn btn-outline-purple full-width" style="margin-top: 5px;" onclick="app.startScan('matter')">Discover Matter</button>
+                    </div>
+                    
+                    <div class="control-group">
+                        <h3><i class="fa-solid fa-broadcast-tower text-pink"></i> Z-Wave</h3>
+                        <button class="btn btn-outline-pink full-width" onclick="app.startScan('zwave')">Scan Z-Wave</button>
+                    </div>
+                    
+                    <div class="control-group">
+                        <h3><i class="fa-solid fa-tower-broadcast text-teal"></i> LoRaWAN</h3>
+                        <button class="btn btn-outline-teal full-width" onclick="app.startScan('lora')">Scan LoRa</button>
                     </div>
                 </section>
 
@@ -145,24 +155,39 @@
                     </div>
                 </section>
 
-                <!-- Pie Chart -->
-                <div class="glass-panel"
-                    style="margin-bottom: 24px; display: flex; align-items: center; gap: 30px; padding: 20px 28px;">
-                    <div style="width: 160px; height: 160px; flex-shrink: 0;">
-                        <canvas id="riskPieChart"></canvas>
-                    </div>
-                    <div>
-                        <h3 style="margin-bottom: 10px; color: var(--text-primary);">Security Distribution</h3>
-                        <p style="color: var(--text-muted); font-size: 13px;">Real-time breakdown of your network's
-                            security posture across all discovered devices.</p>
-                        <div style="margin-top: 14px; display: flex; gap: 20px; flex-wrap: wrap;">
-                            <span style="font-size: 12px;"><span
-                                    style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;margin-right:6px;"></span>Safe</span>
-                            <span style="font-size: 12px;"><span
-                                    style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#f59e0b;margin-right:6px;"></span>Medium</span>
-                            <span style="font-size: 12px;"><span
-                                    style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444;margin-right:6px;"></span>Risk</span>
+                <!-- Charts Row -->
+                <div style="display: flex; gap: 20px; margin-bottom: 24px; flex-wrap: wrap;">
+                    <!-- Risk Distribution Chart -->
+                    <div class="glass-panel" style="flex: 1; min-width: 300px; padding: 20px;">
+                        <h3 style="margin-bottom: 15px; color: var(--text-primary); font-size: 14px;">Risk Distribution</h3>
+                        <div style="width: 100%; height: 180px; display: flex; align-items: center; justify-content: center;">
+                            <div style="width: 150px; height: 150px;">
+                                <canvas id="riskPieChart"></canvas>
+                            </div>
                         </div>
+                        <div style="display: flex; justify-content: center; gap: 15px; margin-top: 10px;">
+                            <span style="font-size: 11px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-right:4px;"></span>Safe</span>
+                            <span style="font-size: 11px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;margin-right:4px;"></span>Medium</span>
+                            <span style="font-size: 11px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444;margin-right:4px;"></span>Risk</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Protocol Distribution Chart -->
+                    <div class="glass-panel" style="flex: 2; min-width: 400px; padding: 20px;">
+                        <h3 style="margin-bottom: 15px; color: var(--text-primary); font-size: 14px;">Protocol Distribution</h3>
+                        <div style="height: 180px;">
+                            <canvas id="protocolChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Hardware Status -->
+                <div class="glass-panel" style="margin-bottom: 24px; padding: 15px 20px;">
+                    <h3 style="margin-bottom: 10px; color: var(--text-primary); font-size: 14px;">
+                        <i class="fa-solid fa-microchip" style="margin-right: 8px;"></i>Hardware Status
+                    </h3>
+                    <div id="hardwareStatus">
+                        <span style="color: var(--text-muted); font-size: 12px;">Detecting hardware...</span>
                     </div>
                 </div>
 
@@ -273,16 +298,33 @@
             <!-- ================= VIEW: REPORTS ================= -->
             <div id="view-reports" class="view-section hidden">
                 <div class="glass-panel" style="text-align: center; padding: 50px;">
-                    <i class="fa-solid fa-file-pdf"
-                        style="font-size: 64px; margin-bottom: 20px; color: var(--accent-red);"></i>
-                    <h2>Generate Comprehensive Report</h2>
+                    <i class="fa-solid fa-file-export"
+                        style="font-size: 64px; margin-bottom: 20px; color: var(--accent-blue);"></i>
+                    <h2>Export Security Reports</h2>
                     <p style="color: var(--text-muted); margin-bottom: 30px;">
-                        Export all scanned Wi-Fi, BLE, Zigbee devices, and RFID cards along with vulnerability details
-                        into a PDF document.
+                        Export all scanned devices, vulnerabilities, and RFID cards in various formats.
                     </p>
-                    <button class="btn btn-primary btn-lg" onclick="app.downloadReport()">
-                        <i class="fa-solid fa-download"></i> Download Report (PDF)
-                    </button>
+                    
+                    <div style="display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; margin-bottom: 30px;">
+                        <button class="btn btn-primary btn-lg" onclick="app.downloadReport()">
+                            <i class="fa-solid fa-file-pdf"></i> PDF Report
+                        </button>
+                        <button class="btn btn-outline-blue btn-lg" onclick="app.exportJSON()">
+                            <i class="fa-solid fa-file-code"></i> JSON Export
+                        </button>
+                        <button class="btn btn-outline-green btn-lg" onclick="app.exportCSV()">
+                            <i class="fa-solid fa-file-csv"></i> CSV Export
+                        </button>
+                    </div>
+                    
+                    <div style="text-align: left; max-width: 600px; margin: 0 auto; padding: 20px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+                        <h4 style="margin-bottom: 15px; color: var(--text-primary);">Export Formats:</h4>
+                        <ul style="color: var(--text-muted); font-size: 13px; line-height: 1.8; list-style: none; padding: 0;">
+                            <li><i class="fa-solid fa-file-pdf" style="color: #ef4444; margin-right: 10px;"></i> <strong>PDF:</strong> Comprehensive report with executive summary, device inventory, and remediation guide</li>
+                            <li><i class="fa-solid fa-file-code" style="color: #3b82f6; margin-right: 10px;"></i> <strong>JSON:</strong> Full data export for integration with other tools</li>
+                            <li><i class="fa-solid fa-file-csv" style="color: #22c55e; margin-right: 10px;"></i> <strong>CSV:</strong> Spreadsheet-compatible format for analysis</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
 

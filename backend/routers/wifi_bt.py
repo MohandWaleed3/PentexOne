@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 import platform
 import re
+import ssl
+import struct
 
 try:
     from bleak import BleakScanner
@@ -16,9 +18,16 @@ except ImportError:
 
 from database import get_db, Device, Vulnerability
 from models import ScanStatus
-from security_engine import calculate_risk, DEFAULT_CREDENTIALS
+from security_engine import calculate_risk, DEFAULT_CREDENTIALS, assess_tls_security
 
 router = APIRouter(prefix="/wireless", tags=["WiFi & Bluetooth"])
+
+# Deauth detection state
+deauth_state = {
+    "monitoring": False,
+    "packets_detected": 0,
+    "last_alert": None
+}
 
 # ────────────────────────────────────────────────────────────
 # 1. قائمة الواجهات المتاحة
@@ -325,3 +334,192 @@ async def scan_nearby_ssids():
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+# ────────────────────────────────────────────────────────────
+# 7. TLS/SSL Certificate Validation
+# ────────────────────────────────────────────────────────────
+@router.post("/tls/check/{host}")
+async def check_tls_certificate(host: str, port: int = 443, db: Session = Depends(get_db)):
+    """
+    Validates TLS/SSL certificate and security for a device.
+    Returns identified issues and updates device risk.
+    """
+    issues = []
+    
+    try:
+        # Create SSL context
+        context = ssl.create_default_context()
+        
+        # Try to connect and get certificate info
+        with socket.create_connection((host, port), timeout=10) as sock:
+            with context.wrap_socket(sock, server_hostname=host) as ssock:
+                # Check protocol version
+                version = ssock.version()
+                if version == "SSLv3":
+                    issues.append("SSLV3_ENABLED")
+                elif version == "TLSv1":
+                    issues.append("TLSV1_ENABLED")
+                elif version == "TLSv1.1":
+                    issues.append("TLSV1_1_ENABLED")
+                
+                # Get certificate
+                cert = ssock.getpeercert()
+                if cert:
+                    # Check if self-signed
+                    if cert.get('issuer') == cert.get('subject'):
+                        issues.append("SELF_SIGNED_CERT")
+                    
+                    # Check expiration
+                    from datetime import datetime as dt
+                    import email.utils
+                    
+                    # Parse certificate dates
+                    for field in cert.get('notAfter', '').split('\n'):
+                        try:
+                            expiry = email.utils.parsedate_to_datetime(cert['notAfter'])
+                            if expiry < dt.utcnow():
+                                issues.append("EXPIRED_CERT")
+                        except:
+                            pass
+                    
+                # Check cipher strength
+                cipher = ssock.cipher()
+                if cipher:
+                    cipher_name, cipher_proto, cipher_bits = cipher
+                    if cipher_bits and cipher_bits < 128:
+                        issues.append("WEAK_CIPHER")
+                        
+    except ssl.SSLCertVerificationError as e:
+        if "self signed" in str(e).lower():
+            issues.append("SELF_SIGNED_CERT")
+        elif "certificate has expired" in str(e).lower():
+            issues.append("EXPIRED_CERT")
+        elif "hostname mismatch" in str(e).lower():
+            issues.append("CERT_CN_MISMATCH")
+    except ssl.SSLError as e:
+        if "unsupported protocol" in str(e).lower():
+            issues.append("SSLV3_ENABLED")
+    except socket.timeout:
+        return {"status": "error", "message": "Connection timeout"}
+    except socket.error as e:
+        return {"status": "error", "message": f"Connection failed: {str(e)}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    
+    # Update device in database if issues found
+    if issues:
+        device = db.query(Device).filter(Device.ip == host).first()
+        if device:
+            risk_result = calculate_risk(
+                [int(p) for p in device.open_ports.split(",") if p.isdigit()],
+                device.protocol,
+                {"tls_issues": issues}
+            )
+            device.risk_level = risk_result["risk_level"]
+            device.risk_score = risk_result["risk_score"]
+            
+            for v in risk_result["vulnerabilities"]:
+                if v["vuln_type"] in issues:
+                    existing = db.query(Vulnerability).filter(
+                        Vulnerability.device_id == device.id,
+                        Vulnerability.vuln_type == v["vuln_type"]
+                    ).first()
+                    if not existing:
+                        db.add(Vulnerability(
+                            device_id=device.id,
+                            vuln_type=v["vuln_type"],
+                            severity=v["severity"],
+                            description=v["description"],
+                            protocol="TLS/SSL"
+                        ))
+            db.commit()
+    
+    return {
+        "status": "success",
+        "host": host,
+        "port": port,
+        "issues": issues,
+        "secure": len(issues) == 0
+    }
+
+
+# ────────────────────────────────────────────────────────────
+# 8. Wi-Fi Deauthentication Attack Detection
+# ────────────────────────────────────────────────────────────
+@router.post("/deauth/start")
+async def start_deauth_monitor(background_tasks: BackgroundTasks, interface: str = "wlan0mon"):
+    """
+    Starts monitoring for deauthentication frames on the specified interface.
+    Requires monitor mode enabled on the wireless interface.
+    """
+    if deauth_state["monitoring"]:
+        return {"status": "already_running", "message": "Deauth monitoring is already active"}
+    
+    background_tasks.add_task(run_deauth_monitor, interface)
+    deauth_state["monitoring"] = True
+    return {"status": "started", "message": f"Deauth monitoring started on {interface}"}
+
+
+@router.post("/deauth/stop")
+async def stop_deauth_monitor():
+    """Stops the deauthentication attack monitor."""
+    deauth_state["monitoring"] = False
+    return {"status": "stopped", "message": "Deauth monitoring stopped"}
+
+
+@router.get("/deauth/status")
+async def get_deauth_status():
+    """Returns the current deauth monitoring status and detected attacks."""
+    return deauth_state
+
+
+async def run_deauth_monitor(interface: str):
+    """
+    Monitors for deauthentication frames using scapy or tcpdump.
+    Requires: scapy or aircrack-ng installed
+    """
+    try:
+        from scapy.all import sniff, Dot11, Dot11Deauth
+        
+        def handle_deauth(pkt):
+            if pkt.haslayer(Dot11Deauth):
+                deauth_state["packets_detected"] += 1
+                deauth_state["last_alert"] = {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "source": pkt.addr2 if hasattr(pkt, 'addr2') else "Unknown",
+                    "target": pkt.addr1 if hasattr(pkt, 'addr1') else "Unknown"
+                }
+        
+        while deauth_state["monitoring"]:
+            try:
+                sniff(iface=interface, prn=handle_deauth, timeout=5, store=False)
+            except Exception as e:
+                await asyncio.sleep(5)
+                continue
+                
+    except ImportError:
+        # Fallback to tcpdump if scapy not available
+        try:
+            process = subprocess.Popen(
+                ["tcpdump", "-i", interface, "-l", "type mgt subtype deauth"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            while deauth_state["monitoring"]:
+                line = process.stdout.readline()
+                if "DeAuth" in line or "deauth" in line:
+                    deauth_state["packets_detected"] += 1
+                    deauth_state["last_alert"] = {
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "raw": line.strip()
+                    }
+                    
+        except FileNotFoundError:
+            deauth_state["monitoring"] = False
+            deauth_state["error"] = "Neither scapy nor tcpdump available for deauth detection"
+    except Exception as e:
+        deauth_state["monitoring"] = False
+        deauth_state["error"] = str(e)
