@@ -709,6 +709,157 @@ const app = {
         window.open(`${API_BASE}/reports/generate/pdf`, "_blank");
     },
 
+    // ======== EXPORT FEATURES ========
+    exportJSON() {
+        const data = {
+            exported_at: new Date().toISOString(),
+            devices: this.devices,
+            rfid_cards: this.rfidCards,
+            summary: {
+                total: this.devices.length,
+                safe: this.devices.filter(d => d.risk_level === 'SAFE').length,
+                medium: this.devices.filter(d => d.risk_level === 'MEDIUM').length,
+                risk: this.devices.filter(d => d.risk_level === 'RISK').length
+            }
+        };
+        
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `pentexone_scan_${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.showToast('JSON export downloaded', 'success');
+    },
+
+    exportCSV() {
+        // Devices CSV
+        let csv = 'IP,MAC,Hostname,Vendor,Protocol,OS Guess,Risk Level,Risk Score,Open Ports\n';
+        this.devices.forEach(d => {
+            csv += `"${d.ip}","${d.mac}","${d.hostname}","${d.vendor}","${d.protocol}","${d.os_guess}","${d.risk_level}",${d.risk_score},"${d.open_ports}"\n`;
+        });
+        
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `pentexone_devices_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.showToast('CSV export downloaded', 'success');
+    },
+
+    // ======== HARDWARE STATUS ========
+    async fetchHardwareStatus() {
+        try {
+            const res = await fetch(`${API_BASE}/iot/hardware/status`);
+            if (res.ok) {
+                const data = await res.json();
+                this.updateHardwareStatus(data);
+            }
+        } catch (e) {
+            console.error("Failed to fetch hardware status", e);
+        }
+    },
+
+    updateHardwareStatus(data) {
+        const container = document.getElementById('hardwareStatus');
+        if (!container) return;
+        
+        let html = '<div style="display: flex; flex-wrap: wrap; gap: 10px;">';
+        
+        // Zigbee dongle
+        html += `<div class="hw-status-item ${data.zigbee_dongle?.connected ? 'connected' : 'disconnected'}">
+            <i class="fa-solid fa-usb"></i>
+            <span>Zigbee: ${data.zigbee_dongle?.connected ? data.zigbee_dongle.port : 'Not Connected'}</span>
+        </div>`;
+        
+        // Thread dongle
+        html += `<div class="hw-status-item ${data.thread_dongle?.connected ? 'connected' : 'disconnected'}">
+            <i class="fa-solid fa-usb"></i>
+            <span>Thread: ${data.thread_dongle?.connected ? data.thread_dongle.port : 'Not Connected'}</span>
+        </div>`;
+        
+        // KillerBee
+        html += `<div class="hw-status-item ${data.killerbee_available ? 'connected' : 'disconnected'}">
+            <i class="fa-solid fa-code"></i>
+            <span>KillerBee: ${data.killerbee_available ? 'Available' : 'Not Installed'}</span>
+        </div>`;
+        
+        html += '</div>';
+        container.innerHTML = html;
+    },
+
+    // ======== ADDITIONAL SCANS ========
+    async startScan(type) {
+        const progressContainer = document.getElementById("scanProgressContainer");
+        const statusText = document.getElementById("scanStatusText");
+        const progressBar = document.getElementById("scanProgressBar");
+        
+        progressContainer.classList.remove("hidden");
+        progressBar.style.width = "0%";
+        
+        let url = "";
+        let body = null;
+
+        if (type === 'wifi') {
+            const networkSelect = document.getElementById("networkSelect");
+            const networkInput = document.getElementById("networkInput");
+            
+            const network = networkSelect.value || networkInput.value;
+            if (!network) {
+                statusText.textContent = "Please select or enter a network range";
+                setTimeout(()=> progressContainer.classList.add("hidden"), 3000);
+                return;
+            }
+            
+            url = `${API_BASE}/iot/scan/wifi`;
+            body = JSON.stringify({ network: network, timeout: 60 });
+        } else if (type === 'matter') {
+            url = `${API_BASE}/iot/scan/matter`;
+        } else if (type === 'zigbee') {
+            url = `${API_BASE}/iot/scan/zigbee`;
+        } else if (type === 'bluetooth') {
+            url = `${API_BASE}/wireless/scan/bluetooth`;
+        } else if (type === 'thread') {
+            url = `${API_BASE}/iot/scan/thread`;
+        } else if (type === 'zwave') {
+            url = `${API_BASE}/iot/scan/zwave`;
+        } else if (type === 'lora') {
+            url = `${API_BASE}/iot/scan/lora`;
+        }
+
+        try {
+            const reqData = { method: "POST", headers: {"Content-Type": "application/json"} };
+            if (body) reqData.body = body;
+            
+            const res = await fetch(url, reqData);
+            const data = await res.json();
+            statusText.textContent = data.message;
+            if (data.status === 'error') {
+                setTimeout(()=> progressContainer.classList.add("hidden"), 3000);
+                return;
+            }
+
+            // Start polling status
+            if (this.scanInterval) clearInterval(this.scanInterval);
+            this.scanInterval = setInterval(() => this.pollScanStatus(), 2000);
+
+            // Simulating progress bar for UI feel
+            let p = 0;
+            const simInt = setInterval(() => {
+                p += Math.random() * 10;
+                if (p > 90) clearInterval(simInt);
+                else progressBar.style.width = `${p}%`;
+            }, 1000);
+
+        } catch (e) {
+            console.error(e);
+            statusText.textContent = "Error starting scan.";
+        }
+    },
+
     async clearData() {
         if (confirm("Are you sure you want to clear all discovered devices, RFID cards, and vulnerabilities?")) {
             try {
@@ -721,6 +872,7 @@ const app = {
                 this.renderCardsTable();
                 this.renderDeviceDetails();
                 this.fetchSummary();
+                this.updateProtocolChart();
             } catch (e) {
                 console.error(e);
                 alert("Failed to clear data.");
