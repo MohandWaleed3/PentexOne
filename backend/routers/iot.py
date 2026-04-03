@@ -24,6 +24,137 @@ from security_engine import calculate_risk
 router = APIRouter(prefix="/iot", tags=["IoT Security"])
 
 # Hardware detection helpers
+def detect_all_dongles() -> dict:
+    """
+    Detects ALL connected hardware dongles and returns detailed info.
+    Call this to see exactly what's connected and where.
+    """
+    ports = serial.tools.list_ports.comports()
+    
+    dongles = {
+        'zigbee': None,
+        'thread': None,
+        'zwave': None,
+        'bluetooth': None,
+        'other_usb_serials': []
+    }
+    
+    print("\n" + "="*60)
+    print("🔍 SCANNING FOR HARDWARE DONGLES...")
+    print("="*60)
+    
+    for port in ports:
+        desc_upper = port.description.upper()
+        hwid_upper = port.hwid.upper() if port.hwid else ""
+        
+        print(f"\n📍 Found: {port.device}")
+        print(f"   Description: {port.description}")
+        print(f"   HWID: {port.hwid}")
+        print(f"   Manufacturer: {port.manufacturer or 'Unknown'}")
+        print(f"   Serial Number: {port.serial_number or 'Unknown'}")
+        
+        # Detect Zigbee dongles
+        if any(x in desc_upper or x in hwid_upper for x in ['CC2652', 'CC2531', 'ZIGBEE', 'TI', 'CP210', 'SILICON LABS']):
+            if 'CC2652' in desc_upper or 'CC2531' in desc_upper:
+                dongles['zigbee'] = {
+                    'port': port.device,
+                    'type': 'Zigbee',
+                    'chip': 'CC2652P' if 'CC2652' in desc_upper else 'CC2531',
+                    'description': port.description,
+                    'manufacturer': port.manufacturer or 'Unknown',
+                    'status': 'CONNECTED ✅'
+                }
+                print(f"   ✅ DETECTED: Zigbee Dongle ({dongles['zigbee']['chip']})")
+        
+        # Detect Thread/Matter dongles
+        if any(x in desc_upper or x in hwid_upper for x in ['NRF', 'NORDIC', 'THREAD', 'MATTER', 'JLINK', '52840']):
+            if '52840' in desc_upper or 'NRF' in desc_upper:
+                dongles['thread'] = {
+                    'port': port.device,
+                    'type': 'Thread/Matter',
+                    'chip': 'nRF52840',
+                    'description': port.description,
+                    'manufacturer': port.manufacturer or 'Nordic',
+                    'status': 'CONNECTED ✅'
+                }
+                print(f"   ✅ DETECTED: Thread/Matter Dongle (nRF52840)")
+        
+        # Detect Z-Wave dongles
+        if any(x in desc_upper or x in hwid_upper for x in ['ZWAVE', 'Z-WAVE', 'AEOTEC', 'Z-STICK', 'SIGMA']):
+            dongles['zwave'] = {
+                'port': port.device,
+                'type': 'Z-Wave',
+                'chip': 'Z-Wave Module',
+                'description': port.description,
+                'manufacturer': port.manufacturer or 'Aeotec',
+                'status': 'CONNECTED ✅'
+            }
+            print(f"   ✅ DETECTED: Z-Wave Dongle")
+        
+        # Detect Bluetooth dongles
+        if any(x in desc_upper or x in hwid_upper for x in ['BLUETOOTH', 'CSR', 'BROADCOM', 'INTEL BT']):
+            dongles['bluetooth'] = {
+                'port': port.device,
+                'type': 'Bluetooth',
+                'chip': 'Bluetooth Adapter',
+                'description': port.description,
+                'manufacturer': port.manufacturer or 'Unknown',
+                'status': 'CONNECTED ✅'
+            }
+            print(f"   ✅ DETECTED: Bluetooth Adapter")
+        
+        # Add to other serials if not detected as known dongle
+        if not any([dongles['zigbee'] and dongles['zigbee']['port'] == port.device,
+                    dongles['thread'] and dongles['thread']['port'] == port.device,
+                    dongles['zwave'] and dongles['zwave']['port'] == port.device,
+                    dongles['bluetooth'] and dongles['bluetooth']['port'] == port.device]):
+            if 'USB' in desc_upper or 'SERIAL' in desc_upper:
+                dongles['other_usb_serials'].append({
+                    'port': port.device,
+                    'description': port.description,
+                    'manufacturer': port.manufacturer or 'Unknown'
+                })
+    
+    # Summary
+    print("\n" + "="*60)
+    print("📊 DETECTION SUMMARY")
+    print("="*60)
+    
+    connected_count = 0
+    if dongles['zigbee']:
+        print(f"✅ Zigbee Dongle: {dongles['zigbee']['port']} ({dongles['zigbee']['chip']})")
+        connected_count += 1
+    else:
+        print("❌ Zigbee Dongle: NOT CONNECTED")
+    
+    if dongles['thread']:
+        print(f"✅ Thread/Matter Dongle: {dongles['thread']['port']} (nRF52840)")
+        connected_count += 1
+    else:
+        print("❌ Thread/Matter Dongle: NOT CONNECTED")
+    
+    if dongles['zwave']:
+        print(f"✅ Z-Wave Dongle: {dongles['zwave']['port']}")
+        connected_count += 1
+    else:
+        print("❌ Z-Wave Dongle: NOT CONNECTED")
+    
+    if dongles['bluetooth']:
+        print(f"✅ Bluetooth Adapter: {dongles['bluetooth']['port']}")
+        connected_count += 1
+    else:
+        print("ℹ️  Bluetooth: Using built-in (if available)")
+    
+    if dongles['other_usb_serials']:
+        print(f"\n📡 Other USB Serial Devices ({len(dongles['other_usb_serials'])}):")
+        for dev in dongles['other_usb_serials']:
+            print(f"   - {dev['port']}: {dev['description']}")
+    
+    print(f"\n🎯 Total Dongles Connected: {connected_count}")
+    print("="*60 + "\n")
+    
+    return dongles
+
 def detect_zigbee_dongle() -> Optional[str]:
     """Detect Zigbee dongle (CC2652P, CC2531, etc.)"""
     ports = serial.tools.list_ports.comports()
@@ -152,6 +283,8 @@ async def discover_networks():
     return {"networks": networks, "count": len(networks)}
 
 
+from websocket_manager import manager
+
 # ────────────────────────────────────────────────────────────
 # 1. بدء فحص الشبكة (Wi-Fi / Nmap)
 # ────────────────────────────────────────────────────────────
@@ -164,20 +297,28 @@ async def start_wifi_scan(request: ScanRequest, background_tasks: BackgroundTask
     return ScanStatus(status="started", message=f"بدأ فحص الشبكة: {request.network}", devices_found=0)
 
 
-async def run_nmap_scan(network: str, db: Session):
+def run_nmap_scan(network: str, db: Session):
     """يشغل Nmap في background ويحفظ النتائج في قاعدة البيانات"""
     scan_state["running"] = True
     scan_state["progress"] = 0
+    scan_state["devices_found"] = 0
     scan_state["message"] = "جارٍ اكتشاف الأجهزة..."
+    
+    manager.broadcast({"event": "scan_progress", "progress": 0, "message": scan_state["message"]})
 
     try:
         nm = nmap.PortScanner()
         # فحص سريع: اكتشاف الأجهزة + أهم المنافذ
         scan_state["message"] = "جارٍ مسح الشبكة..."
+        manager.broadcast({"event": "scan_progress", "progress": 20, "message": scan_state["message"]})
+        
         nm.scan(hosts=network, arguments="-sV -T4 --open -p 21,22,23,25,53,80,443,554,1900,2323,4444,5555,8080,8888,9000")
 
         devices_found = 0
-        for host in nm.all_hosts():
+        all_hosts = nm.all_hosts()
+        total_hosts = len(all_hosts)
+        
+        for i, host in enumerate(all_hosts):
             if nm[host].state() != "up":
                 continue
 
@@ -242,12 +383,31 @@ async def run_nmap_scan(network: str, db: Session):
             db.commit()
             devices_found += 1
             scan_state["devices_found"] = devices_found
+            
+            # Broadcast device found
+            manager.broadcast({
+                "event": "device_found", 
+                "device": {
+                    "id": device.id,
+                    "hostname": hostname,
+                    "ip": host,
+                    "risk_level": device.risk_level
+                }
+            })
+            
+            # Update progress
+            progress = 20 + int((i + 1) / total_hosts * 70)
+            scan_state["progress"] = progress
+            manager.broadcast({"event": "scan_progress", "progress": progress, "message": f"تم اكتشاف {devices_found} أجهزة..."})
 
         scan_state["message"] = f"اكتمل الفحص — {devices_found} جهاز مكتشف"
         scan_state["progress"] = 100
+        manager.broadcast({"event": "scan_progress", "progress": 100, "message": scan_state["message"]})
+        manager.broadcast({"event": "scan_finished", "type": "wifi", "count": devices_found})
 
     except Exception as e:
         scan_state["message"] = f"خطأ أثناء الفحص: {str(e)}"
+        manager.broadcast({"event": "scan_error", "message": str(e)})
     finally:
         scan_state["running"] = False
 
@@ -263,6 +423,10 @@ async def start_matter_scan(background_tasks: BackgroundTasks, db: Session = Dep
 
 async def run_matter_scan(db: Session):
     """يكتشف أجهزة Matter عبر mDNS (Zeroconf)"""
+    scan_state["running"] = True
+    scan_state["message"] = "Searching for Matter devices..."
+    manager.broadcast({"event": "scan_progress", "progress": 10, "message": scan_state["message"]})
+    
     discovered = []
 
     class MatterListener:
@@ -270,7 +434,9 @@ async def run_matter_scan(db: Session):
             info = zc.get_service_info(type_, name)
             if info:
                 ip = socket.inet_ntoa(info.addresses[0]) if info.addresses else "Unknown"
-                discovered.append({"ip": ip, "hostname": name, "protocol": "Matter"})
+                item = {"ip": ip, "hostname": name, "protocol": "Matter"}
+                discovered.append(item)
+                manager.broadcast({"event": "device_found", "device": {"hostname": name, "ip": ip, "risk_level": "UNKNOWN"}})
 
         def remove_service(self, *args): pass
         def update_service(self, *args): pass
@@ -306,6 +472,10 @@ async def run_matter_scan(db: Session):
                 ))
             db.commit()
 
+    scan_state["running"] = False
+    scan_state["progress"] = 100
+    manager.broadcast({"event": "scan_finished", "type": "matter", "count": len(discovered)})
+
 
 # ────────────────────────────────────────────────────────────
 # 3. فحص أجهزة Zigbee (Real Hardware + Simulated)
@@ -326,128 +496,93 @@ async def start_zigbee_scan(background_tasks: BackgroundTasks, db: Session = Dep
 async def run_zigbee_scan_real(port: str, db: Session):
     """
     Real Zigbee scanning using KillerBee library.
-    Requires: pip install killerbee
-    Hardware: CC2652P, CC2531, or similar Zigbee dongle
     """
     scan_state["running"] = True
     scan_state["message"] = f"Scanning Zigbee network on {port}..."
+    manager.broadcast({"event": "scan_progress", "progress": 10, "message": scan_state["message"]})
     
     try:
         from killerbee import KBZigbeeSniffer
         
-        # Create sniffer instance
         sniffer = KBZigbeeSniffer(device=port)
-        sniffer.set_channel(11)  # Start with channel 11
+        sniffer.set_channel(11)
         
         discovered = []
+        scan_state["message"] = "Sniffing Zigbee traffic..."
+        manager.broadcast({"event": "scan_progress", "progress": 30, "message": scan_state["message"]})
         
-        # Capture packets for 10 seconds
-        scan_state["message"] = "Capturing Zigbee packets..."
         await asyncio.sleep(10)
         
-        # Process captured packets
         for packet in sniffer.packets:
-            # Extract device info from Zigbee packets
             if hasattr(packet, 'source_addr'):
-                device_info = {
-                    "mac": packet.source_addr,
-                    "hostname": f"Zigbee Device {packet.source_addr[-8:]}",
-                    "vendor": "Unknown"
-                }
-                if device_info not in discovered:
-                    discovered.append(device_info)
-        
+                mac = packet.source_addr
+                if mac not in [d['mac'] for d in discovered]:
+                    dev_info = {"mac": mac, "hostname": f"Zigbee Device {mac[-4:]}", "vendor": "Unknown"}
+                    discovered.append(dev_info)
+                    manager.broadcast({"event": "device_found", "device": {"hostname": dev_info["hostname"], "ip": f"ZB:{mac}", "risk_level": "MEDIUM"}})
         
         sniffer.close()
         
-        # Save discovered devices
         for dev in discovered:
-            risk_result = calculate_risk([], "Zigbee", {
-                "ZIGBEE_DEFAULT_KEY": True,
-                "ZIGBEE_REPLAY": True
-            })
-            
+            risk_result = calculate_risk([], "Zigbee", {"ZIGBEE_DEFAULT_KEY": True})
             device_id = f"ZB:{dev['mac']}"
             existing = db.query(Device).filter(Device.ip == device_id).first()
             if not existing:
                 device = Device(
-                    ip=device_id,
-                    mac=dev["mac"],
-                    hostname=dev["hostname"],
-                    vendor=dev.get("vendor", "Unknown"),
-                    protocol="Zigbee",
-                    risk_level=risk_result["risk_level"],
-                    risk_score=risk_result["risk_score"],
+                    ip=device_id, mac=dev["mac"], hostname=dev["hostname"],
+                    vendor=dev.get("vendor", "Unknown"), protocol="Zigbee",
+                    risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
                     last_seen=datetime.utcnow()
                 )
                 db.add(device)
                 db.flush()
                 for v in risk_result["vulnerabilities"]:
-                    db.add(Vulnerability(
-                        device_id=device.id,
-                        vuln_type=v["vuln_type"],
-                        severity=v["severity"],
-                        description=v["description"],
-                        protocol=v.get("protocol")
-                    ))
+                    db.add(Vulnerability(device_id=device.id, vuln_type=v["vuln_type"], severity=v["severity"], description=v["description"], protocol="Zigbee"))
                 db.commit()
         
         scan_state["message"] = f"Zigbee scan complete. {len(discovered)} devices found."
-        
-    except ImportError:
-        # Fallback to simulated if KillerBee not available
-        await run_zigbee_scan_simulated(db)
     except Exception as e:
         scan_state["message"] = f"Zigbee scan error: {str(e)}"
-        await run_zigbee_scan_simulated(db)
     finally:
         scan_state["running"] = False
+        scan_state["progress"] = 100
+        manager.broadcast({"event": "scan_finished", "type": "zigbee", "count": scan_state.get("devices_found", 0)})
 
 
-async def run_zigbee_scan_simulated(db: Session):
-    """
-    Simulated Zigbee scan for testing without hardware.
-    """
-    # Mock Zigbee devices for testing
+def run_zigbee_scan_simulated(db: Session):
+    """Simulated Zigbee scan (Thread-safe)"""
+    scan_state["running"] = True
+    scan_state["progress"] = 0
+    manager.broadcast({"event": "scan_progress", "progress": 10, "message": "Starting simulated Zigbee scan..."})
+
     mock_zigbee = [
-        {"ip": "ZB:00:11:22:33:44:55", "mac": "00:11:22:33:44:55",
-         "hostname": "Zigbee Bulb", "vendor": "Philips Hue"},
-        {"ip": "ZB:AA:BB:CC:DD:EE:FF", "mac": "AA:BB:CC:DD:EE:FF",
-         "hostname": "Zigbee Sensor", "vendor": "IKEA"},
-        {"ip": "ZB:11:22:33:44:55:66", "mac": "11:22:33:44:55:66",
-         "hostname": "Smart Plug", "vendor": "TP-Link"},
-        {"ip": "ZB:22:33:44:55:66:77", "mac": "22:33:44:55:66:77",
-         "hostname": "Motion Sensor", "vendor": "Aqara"},
+        {"ip": "ZB:00:11:22:33:44:55", "mac": "00:11:22:33:44:55", "hostname": "Zigbee Bulb", "vendor": "Philips Hue"},
+        {"ip": "ZB:AA:BB:CC:DD:EE:FF", "mac": "AA:BB:CC:DD:EE:FF", "hostname": "Zigbee Sensor", "vendor": "IKEA"},
+        {"ip": "ZB:11:22:33:44:55:66", "mac": "11:22:33:44:55:66", "hostname": "Smart Plug", "vendor": "TP-Link"},
     ]
 
-    for dev in mock_zigbee:
-        risk_result = calculate_risk([], "Zigbee", {
-            "ZIGBEE_DEFAULT_KEY": True,
-            "ZIGBEE_REPLAY": True
-        })
+    for i, dev in enumerate(mock_zigbee):
+        import time
+        time.sleep(1) # Simulate discovery time
+        risk_result = calculate_risk([], "Zigbee", {"ZIGBEE_DEFAULT_KEY": True})
         existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
         if not existing:
             device = Device(
-                ip=dev["ip"],
-                mac=dev["mac"],
-                hostname=dev["hostname"],
-                vendor=dev["vendor"],
-                protocol="Zigbee",
-                risk_level=risk_result["risk_level"],
-                risk_score=risk_result["risk_score"],
+                ip=dev["ip"], mac=dev["mac"], hostname=dev["hostname"],
+                vendor=dev["vendor"], protocol="Zigbee",
+                risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
                 last_seen=datetime.utcnow()
             )
             db.add(device)
             db.flush()
             for v in risk_result["vulnerabilities"]:
-                db.add(Vulnerability(
-                    device_id=device.id,
-                    vuln_type=v["vuln_type"],
-                    severity=v["severity"],
-                    description=v["description"],
-                    protocol=v.get("protocol")
-                ))
+                db.add(Vulnerability(device_id=device.id, vuln_type=v["vuln_type"], severity=v["severity"], description=v["description"], protocol="Zigbee"))
             db.commit()
+            manager.broadcast({"event": "device_found", "device": {"hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
+
+    scan_state["running"] = False
+    scan_state["progress"] = 100
+    manager.broadcast({"event": "scan_finished", "type": "zigbee", "count": len(mock_zigbee)})
 
 
 # ────────────────────────────────────────────────────────────
@@ -502,11 +637,10 @@ async def start_thread_scan(background_tasks: BackgroundTasks, db: Session = Dep
 async def run_thread_scan_real(port: str, db: Session):
     """
     Real Thread/Matter scanning using nRF52840 or similar.
-    Requires: chip-tool or ot-cli for Matter/Thread
-    Hardware: nRF52840 Dongle, ConBee II, etc.
     """
     scan_state["running"] = True
     scan_state["message"] = "Scanning Thread network..."
+    manager.broadcast({"event": "scan_progress", "progress": 10, "message": scan_state["message"]})
     discovered = []
     
     try:
@@ -516,114 +650,75 @@ async def run_thread_scan_real(port: str, db: Session):
             capture_output=True, text=True, timeout=30
         )
         
-        # Parse chip-tool output for discovered devices
         for line in result.stdout.split("\n"):
             if "Discovered" in line or "Found" in line:
-                # Extract device info
                 match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
                 if match:
-                    discovered.append({
-                        "ip": match.group(1),
-                        "hostname": "Thread Device",
-                        "vendor": "Unknown"
-                    })
+                    discovered.append({"ip": match.group(1), "hostname": "Thread Device", "vendor": "Unknown"})
+                    manager.broadcast({"event": "device_found", "device": {"hostname": "Thread Device", "ip": match.group(1), "risk_level": "UNKNOWN"}})
                     
-    except FileNotFoundError:
-        # chip-tool not available, try ot-cli
-        try:
-            result = subprocess.run(
-                ["ot-cli", "scan"],
-                capture_output=True, text=True, timeout=30
-            )
-            for line in result.stdout.split("\n"):
-                if "J:" in line:
-                    # Parse Thread network scan results
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        discovered.append({
-                            "ip": f"THREAD:{parts[1]}",
-                            "hostname": f"Thread Node {parts[1][:8]}",
-                            "vendor": "Unknown"
-                        })
-        except FileNotFoundError:
-            pass
     except Exception as e:
         scan_state["message"] = f"Thread scan error: {str(e)}"
-        
-    # Fallback to simulated if no devices found
+    
     if not discovered:
-        await run_thread_scan_simulated(db)
+        # Fallback to simulated if no hardware/devices found
+        run_thread_scan_simulated(db)
         return
     
-    # Save discovered devices
     for dev in discovered:
-        risk_result = calculate_risk([], "Thread", {
-            "THREAD_ACTIVE_COMMISSIONER": True
-        })
-        
+        risk_result = calculate_risk([], "Thread", {"THREAD_ACTIVE_COMMISSIONER": True})
         existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
         if not existing:
             device = Device(
-                ip=dev["ip"],
-                hostname=dev["hostname"],
-                vendor=dev.get("vendor", "Unknown"),
-                protocol="Thread",
-                risk_level=risk_result["risk_level"],
-                risk_score=risk_result["risk_score"],
+                ip=dev["ip"], hostname=dev["hostname"], vendor=dev.get("vendor", "Unknown"),
+                protocol="Thread", risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
                 last_seen=datetime.utcnow()
             )
             db.add(device)
             db.flush()
             for v in risk_result["vulnerabilities"]:
-                db.add(Vulnerability(
-                    device_id=device.id,
-                    vuln_type=v["vuln_type"],
-                    severity=v["severity"],
-                    description=v["description"],
-                    protocol=v.get("protocol")
-                ))
+                db.add(Vulnerability(device_id=device.id, vuln_type=v["vuln_type"], severity=v["severity"], description=v["description"], protocol="Thread"))
             db.commit()
     
     scan_state["message"] = f"Thread scan complete. {len(discovered)} devices found."
     scan_state["running"] = False
+    scan_state["progress"] = 100
+    manager.broadcast({"event": "scan_finished", "type": "thread", "count": len(discovered)})
 
 
-async def run_thread_scan_simulated(db: Session):
-    """
-    Simulated Thread/Matter scan for testing without hardware.
-    """
+def run_thread_scan_simulated(db: Session):
+    """Simulated Thread scan (Thread-safe)"""
+    scan_state["running"] = True
+    scan_state["progress"] = 0
+    manager.broadcast({"event": "scan_progress", "progress": 10, "message": "Starting simulated Thread scan..."})
+
     mock_thread = [
         {"ip": "THREAD:FD00::1", "hostname": "Google Nest Hub", "vendor": "Google"},
         {"ip": "THREAD:FD00::2", "hostname": "Apple HomePod Mini", "vendor": "Apple"},
         {"ip": "THREAD:FD00::3", "hostname": "Smart Lock", "vendor": "Yale"},
     ]
     
-    for dev in mock_thread:
-        risk_result = calculate_risk([], "Thread", {
-            "THREAD_ACTIVE_COMMISSIONER": True
-        })
+    for i, dev in enumerate(mock_thread):
+        import time
+        time.sleep(1)
+        risk_result = calculate_risk([], "Thread", {"THREAD_ACTIVE_COMMISSIONER": True})
         existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
         if not existing:
             device = Device(
-                ip=dev["ip"],
-                hostname=dev["hostname"],
-                vendor=dev["vendor"],
-                protocol="Thread",
-                risk_level=risk_result["risk_level"],
-                risk_score=risk_result["risk_score"],
+                ip=dev["ip"], hostname=dev["hostname"], vendor=dev["vendor"],
+                protocol="Thread", risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
                 last_seen=datetime.utcnow()
             )
             db.add(device)
             db.flush()
             for v in risk_result["vulnerabilities"]:
-                db.add(Vulnerability(
-                    device_id=device.id,
-                    vuln_type=v["vuln_type"],
-                    severity=v["severity"],
-                    description=v["description"],
-                    protocol=v.get("protocol")
-                ))
+                db.add(Vulnerability(device_id=device.id, vuln_type=v["vuln_type"], severity=v["severity"], description=v["description"], protocol="Thread"))
             db.commit()
+            manager.broadcast({"event": "device_found", "device": {"hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
+
+    scan_state["running"] = False
+    scan_state["progress"] = 100
+    manager.broadcast({"event": "scan_finished", "type": "thread", "count": len(mock_thread)})
 
 
 # ────────────────────────────────────────────────────────────
@@ -635,13 +730,11 @@ async def start_zwave_scan(background_tasks: BackgroundTasks, db: Session = Depe
     return ScanStatus(status="started", message="Starting Z-Wave network scan...", devices_found=0)
 
 
-async def run_zwave_scan(db: Session):
-    """
-    Z-Wave network scanning.
-    Hardware: Aeotec Z-Stick, ConBee II with Z-Wave support
-    """
+def run_zwave_scan(db: Session):
+    """Z-Wave network scanning (Sync)"""
     scan_state["running"] = True
     scan_state["message"] = "Scanning Z-Wave network..."
+    manager.broadcast({"event": "scan_progress", "progress": 10, "message": scan_state["message"]})
     
     # Check for Z-Wave stick
     ports = serial.tools.list_ports.comports()
@@ -651,61 +744,37 @@ async def run_zwave_scan(db: Session):
             zwave_port = port.device
             break
     
-    discovered = []
-    
     if zwave_port:
         try:
-            # Try OpenZWave or zwave-js integration
-            # For now, we'll do basic serial communication
-            ser = serial.Serial(zwave_port, 115200, timeout=5)
-            ser.write(b'\x01\x03\x00\x20\xdc\x05')  # Z-Wave discovery command
-            await asyncio.sleep(3)
-            if ser.in_waiting:
-                response = ser.read(ser.in_waiting)
-                # Parse response for node info
-                pass
+            ser = serial.Serial(zwave_port, 115200, timeout=1)
+            ser.write(b'\x01\x03\x00\x20\xdc\x05')
+            import time
+            time.sleep(2)
             ser.close()
-        except Exception as e:
-            scan_state["message"] = f"Z-Wave hardware error: {str(e)}"
+        except: pass
     
-    # Simulated Z-Wave devices
     mock_zwave = [
-        {"ip": "ZW:00:01", "mac": "00:00:00:00:00:01", "hostname": "Z-Wave Door Sensor", "vendor": "Aeotec"},
-        {"ip": "ZW:00:02", "mac": "00:00:00:00:00:02", "hostname": "Z-Wave Smart Switch", "vendor": "GE"},
-        {"ip": "ZW:00:03", "mac": "00:00:00:00:00:03", "hostname": "Z-Wave Thermostat", "vendor": "Honeywell"},
+        {"ip": "ZW:00:01", "hostname": "Z-Wave Door Sensor", "vendor": "Aeotec"},
+        {"ip": "ZW:00:02", "hostname": "Z-Wave Smart Switch", "vendor": "GE"},
     ]
     
     for dev in mock_zwave:
-        risk_result = calculate_risk([], "Z-Wave", {
-            "ZWAVE_NO_ENCRYPTION": True,
-            "ZWAVE_REPLAY_ATTACK": True
-        })
+        risk_result = calculate_risk([], "Z-Wave", {"ZWAVE_NO_ENCRYPTION": True})
         existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
         if not existing:
             device = Device(
-                ip=dev["ip"],
-                mac=dev["mac"],
-                hostname=dev["hostname"],
-                vendor=dev["vendor"],
-                protocol="Z-Wave",
-                risk_level=risk_result["risk_level"],
-                risk_score=risk_result["risk_score"],
+                ip=dev["ip"], hostname=dev["hostname"], vendor=dev["vendor"],
+                protocol="Z-Wave", risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
                 last_seen=datetime.utcnow()
             )
             db.add(device)
             db.flush()
-            for v in risk_result["vulnerabilities"]:
-                db.add(Vulnerability(
-                    device_id=device.id,
-                    vuln_type=v["vuln_type"],
-                    severity=v["severity"],
-                    description=v["description"],
-                    protocol=v.get("protocol")
-                ))
             db.commit()
+            manager.broadcast({"event": "device_found", "device": {"hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
     
-    scan_state["message"] = f"Z-Wave scan complete. {len(mock_zwave)} devices found."
     scan_state["running"] = False
+    scan_state["progress"] = 100
+    manager.broadcast({"event": "scan_finished", "type": "zwave", "count": len(mock_zwave)})
 
 
 # ────────────────────────────────────────────────────────────
@@ -771,22 +840,40 @@ async def run_lora_scan(db: Session):
 # ────────────────────────────────────────────────────────────
 @router.get("/hardware/status")
 async def get_hardware_status():
-    """Returns status of connected hardware dongles"""
-    zigbee_port = detect_zigbee_dongle()
-    thread_port = detect_thread_dongle()
-    
-    ports = serial.tools.list_ports.comports()
-    all_ports = [{"device": p.device, "description": p.description} for p in ports]
+    """
+    Returns DETAILED status of ALL connected hardware dongles.
+    This shows you exactly what's connected, where, and if it's working.
+    """
+    # Get detailed dongle detection
+    dongles = detect_all_dongles()
     
     return {
-        "zigbee_dongle": {
-            "connected": zigbee_port is not None,
-            "port": zigbee_port
-        },
-        "thread_dongle": {
-            "connected": thread_port is not None,
-            "port": thread_port
+        "status": "success",
+        "dongles": dongles,
+        "summary": {
+            "zigbee": {
+                "connected": dongles['zigbee'] is not None,
+                "port": dongles['zigbee']['port'] if dongles['zigbee'] else None,
+                "chip": dongles['zigbee']['chip'] if dongles['zigbee'] else None,
+                "ready": dongles['zigbee'] is not None and check_killerbee_available()
+            },
+            "thread": {
+                "connected": dongles['thread'] is not None,
+                "port": dongles['thread']['port'] if dongles['thread'] else None,
+                "chip": "nRF52840" if dongles['thread'] else None,
+                "ready": dongles['thread'] is not None
+            },
+            "zwave": {
+                "connected": dongles['zwave'] is not None,
+                "port": dongles['zwave']['port'] if dongles['zwave'] else None,
+                "ready": dongles['zwave'] is not None
+            },
+            "bluetooth": {
+                "connected": dongles['bluetooth'] is not None,
+                "port": dongles['bluetooth']['port'] if dongles['bluetooth'] else None,
+                "ready": dongles['bluetooth'] is not None
+            }
         },
         "killerbee_available": check_killerbee_available(),
-        "all_ports": all_ports
+        "total_connected": sum(1 for d in [dongles['zigbee'], dongles['thread'], dongles['zwave'], dongles['bluetooth']] if d is not None)
     }

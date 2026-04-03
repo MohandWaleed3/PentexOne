@@ -82,12 +82,20 @@ def read_root():
     return RedirectResponse(url="/login")
 
 
+from websocket_manager import manager
+
+# Export manager to other routers
+app.manager = manager
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
+    await manager.connect(websocket)
     try:
         while True:
+            # We keep the heartbeat for connection stability
             await websocket.send_json({"event": "heartbeat", "status": "active"})
-            await asyncio.sleep(5)
+            await asyncio.sleep(10)
     except Exception as e:
-        logger.error(f"WebSocket Error: {e}")
+        logger.debug(f"WebSocket connection closed: {e}")
+    finally:
+        manager.disconnect(websocket)

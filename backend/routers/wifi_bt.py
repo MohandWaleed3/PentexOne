@@ -250,61 +250,133 @@ async def scan_nearby_ssids():
 
     try:
         if system == "Darwin":  # macOS
-            # استخدام system_profiler للحصول على معلومات الأيربورت
-            result = subprocess.run(
-                ["system_profiler", "SPAirPortDataType"],
-                capture_output=True, text=True, timeout=15
-            )
-            
-            # استخراج الأقسام المهتمين بها
-            output = result.stdout
-            
-            # البحث عن "Other Local Wi-Fi Networks" أو "Current Network Information"
-            # سنقوم بتقسيم المخرجات بناءً على السطور
-            ssids_found = []
-            current_ssid = None
-            
-            lines = output.split("\n")
-            in_networks_section = False
-            
-            for line in lines:
-                if not line.strip(): continue
+            # Method 1: Try CoreWLAN via PyObjC (if available)
+            try:
+                import CoreWLAN
+                from Foundation import NSBundle
                 
-                if "Other Local Wi-Fi Networks:" in line or "Current Network Information:" in line:
-                    in_networks_section = True
-                    continue
+                # Get WiFi interface
+                wifi_interface = CoreWLAN.CWWiFiClient.sharedWiFiClient().interface()
+                if wifi_interface:
+                    # Scan for networks
+                    error = None
+                    scan_results, error = wifi_interface.scanForNetworksWithSSID_error_(None, None)
+                    
+                    if scan_results:
+                        for network in scan_results:
+                            ssid = network.ssid() if network.ssid() else "Hidden"
+                            rssi = network.rssiValue() if hasattr(network, 'rssiValue') else "N/A"
+                            channel = str(network.wlanChannel().channelNumber()) if network.wlanChannel() else "Unknown"
+                            security = "WPA2" if network.security() != 0 else "Open"
+                            
+                            networks.append({
+                                "ssid": ssid,
+                                "rssi": rssi,
+                                "security": security,
+                                "channel": channel
+                            })
+            except ImportError:
+                # PyObjC not available, try alternative methods
+                pass
+            except Exception as e:
+                logger.error(f"CoreWLAN scan failed: {e}")
+            
+            # Method 2: Use system_profiler (SSIDs may be redacted on newer macOS)
+            if not networks:
+                try:
+                    result = subprocess.run(
+                        ["/usr/sbin/system_profiler", "SPAirPortDataType"],
+                        capture_output=True, text=True, timeout=20
+                    )
+                    
+                    output = result.stdout
+                    lines = output.split("\n")
+                    in_networks_section = False
+                    current_ssid = None
+                    
+                    for i, line in enumerate(lines):
+                        line_stripped = line.strip()
+                        
+                        # Check for network sections
+                        if "Other Local Wi-Fi Networks:" in line:
+                            in_networks_section = True
+                            continue
+                        elif "Current Network Information:" in line:
+                            # Extract current network SSID
+                            in_networks_section = True
+                            # Next line after this contains the SSID
+                            if i + 1 < len(lines):
+                                next_line = lines[i + 1].strip()
+                                if next_line.endswith(":"):
+                                    current_ssid = next_line[:-1]
+                                    if current_ssid and current_ssid != "<redacted>":
+                                        networks.append({
+                                            "ssid": current_ssid,
+                                            "rssi": "N/A",
+                                            "security": "Unknown",
+                                            "channel": "Unknown",
+                                            "status": "Connected"
+                                        })
+                            continue
+                        elif in_networks_section and line_stripped and not line.startswith(" "):
+                            in_networks_section = False
+                            continue
+                        
+                        if in_networks_section and line_stripped:
+                            # Check for SSID lines (usually end with : and contain network name)
+                            if line_stripped.endswith(":") and len(line_stripped) > 1:
+                                ssid_name = line_stripped[:-1]
+                                # Skip redacted SSIDs and headers
+                                if ssid_name and ssid_name != "SSID" and ssid_name != "<redacted>":
+                                    current_ssid = ssid_name
+                                    networks.append({
+                                        "ssid": ssid_name,
+                                        "rssi": "N/A",
+                                        "security": "Unknown",
+                                        "channel": "Unknown"
+                                    })
+                            elif ":" in line_stripped and networks:
+                                # Parse details
+                                parts = line_stripped.split(":", 1)
+                                if len(parts) == 2:
+                                    key = parts[0].strip()
+                                    val = parts[1].strip()
+                                    
+                                    if "Security" in key:
+                                        networks[-1]["security"] = val
+                                    elif "Channel" in key:
+                                        networks[-1]["channel"] = val.split()[0] if val else "Unknown"
+                                    elif "Signal" in key or "Noise" in key:
+                                        rssi_match = re.search(r'(-\d+)', val)
+                                        if rssi_match:
+                                            networks[-1]["rssi"] = int(rssi_match.group(1))
                 
-                # إذا وصلنا لقسم جديد غير متعلق بالشبكات، نوقف البحث
-                if in_networks_section and line.strip() and not line.startswith(" "):
-                     in_networks_section = False
-
-                if in_networks_section:
-                    line_stripped = line.strip()
-                    # سطر الـ SSID في system_profiler ينتهي بـ : 
-                    # ويكون مسبوقاً بمسافات (عادة 12 مسافة للشبكات الأخرى)
-                    if line_stripped.endswith(":") and ":" not in line_stripped[:-1]:
-                        current_ssid = line_stripped[:-1]
-                        if current_ssid == "SSID": continue # تجاهل العناوين الفرعية
-                        
-                        networks.append({
-                            "ssid": current_ssid,
-                            "rssi": "N/A",
-                            "security": "Unknown",
-                            "channel": "Unknown"
-                        })
-                    elif current_ssid and ":" in line:
-                        parts = line.split(":", 1)
-                        key = parts[0].strip()
-                        val = parts[1].strip()
-                        
-                        if "Signal / Noise" in key:
-                            rssi_match = re.search(r'(-\d+) dBm', val)
-                            if rssi_match:
-                                networks[-1]["rssi"] = int(rssi_match.group(1))
-                        elif "Security" in key:
-                            networks[-1]["security"] = val
-                        elif "Channel" in key:
-                            networks[-1]["channel"] = val
+                except Exception as e:
+                    logger.error(f"System profiler scan failed: {e}")
+            
+            # Method 3: Get current network info
+            if not networks:
+                try:
+                    # Get current connection info
+                    result = subprocess.run(
+                        ["networksetup", "-getairportnetwork", "en0"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    output = result.stdout.strip()
+                    if "not associated" not in output.lower():
+                        # Extract SSID from output like "Current Wi-Fi Network: MyNetwork"
+                        parts = output.split(": ")
+                        if len(parts) > 1:
+                            ssid = parts[1].strip()
+                            networks.append({
+                                "ssid": ssid,
+                                "rssi": "N/A",
+                                "security": "Connected",
+                                "channel": "Unknown",
+                                "status": "Connected"
+                            })
+                except Exception as e:
+                    logger.error(f"Network setup scan failed: {e}")
 
         else:  # Linux (nmcli)
             try:
@@ -324,20 +396,49 @@ async def scan_nearby_ssids():
                         })
             except Exception:
                 # Fallback to iwlist if nmcli fails
-                pass
+                try:
+                    result = subprocess.run(
+                        ["sudo", "iwlist", "wlan0", "scan"],
+                        capture_output=True, text=True, timeout=15
+                    )
+                    current_ssid = None
+                    for line in result.stdout.split("\n"):
+                        if 'ESSID:' in line:
+                            match = re.search(r'ESSID:"(.+?)"', line)
+                            if match:
+                                networks.append({
+                                    "ssid": match.group(1),
+                                    "rssi": "N/A",
+                                    "security": "Unknown",
+                                    "channel": "Unknown"
+                                })
+                except Exception as e2:
+                    logger.error(f"iwlist scan failed: {e2}")
 
-        # تنظيف النتائج (إزالة المتكرر)
+        # Remove duplicates and filter
         seen = set()
         unique_networks = []
         for n in networks:
-            if n["ssid"] and n["ssid"] not in seen:
+            ssid = n.get("ssid", "")
+            if ssid and ssid not in seen and ssid != "" and ssid != "<redacted>":
                 unique_networks.append(n)
-                seen.add(n["ssid"])
+                seen.add(ssid)
 
+        logger.info(f"Found {len(unique_networks)} WiFi networks")
+        
+        if not unique_networks:
+            return {
+                "status": "partial",
+                "message": "No SSIDs found. On macOS, SSIDs may be redacted for privacy. Try scanning for devices instead.",
+                "ssids": [],
+                "count": 0
+            }
+        
         return {"status": "success", "ssids": unique_networks, "count": len(unique_networks)}
 
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        logger.error(f"SSID scan error: {e}")
+        return {"status": "error", "message": str(e), "ssids": [], "count": 0}
 
 
 # ────────────────────────────────────────────────────────────
@@ -527,3 +628,138 @@ async def run_deauth_monitor(interface: str):
     except Exception as e:
         deauth_state["monitoring"] = False
         deauth_state["error"] = str(e)
+
+
+# ────────────────────────────────────────────────────────────
+# 9. Quick Network Device Discovery (One-Click)
+# ────────────────────────────────────────────────────────────
+@router.post("/discover/devices")
+async def quick_discover_devices(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    One-click discovery of ALL devices on your current network.
+    Automatically detects your network and scans it.
+    """
+    system = platform.system()
+    network = None
+    
+    try:
+        if system == "Darwin":  # macOS
+            result = subprocess.run(["ifconfig"], capture_output=True, text=True, timeout=5)
+            current_iface = None
+            for line in result.stdout.split("\n"):
+                if line and not line[0].isspace():
+                    m = re.match(r'^(\S+?):', line)
+                    if m:
+                        current_iface = m.group(1)
+                elif current_iface:
+                    ip_m = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', line)
+                    mask_m = re.search(r'netmask (0x[0-9a-fA-F]+)', line)
+                    if ip_m and mask_m:
+                        ip = ip_m.group(1)
+                        if ip.startswith("127."):
+                            continue
+                        mask_str = mask_m.group(1)
+                        if mask_str.startswith("0x"):
+                            cidr = bin(int(mask_str, 16)).count("1")
+                        else:
+                            cidr = 24  # Default
+                        parts = ip.split(".")
+                        network = f"{parts[0]}.{parts[1]}.{parts[2]}.0/{cidr}"
+                        break
+        else:  # Linux
+            result = subprocess.run(["ip", "route", "show"], capture_output=True, text=True, timeout=5)
+            for line in result.stdout.split("\n"):
+                if "dev" in line and "/" in line and not line.startswith("127"):
+                    match = re.search(r'(\d+\.\d+\.\d+\.\d+/\d+)', line)
+                    if match:
+                        network = match.group(1)
+                        break
+    except Exception as e:
+        logger.error(f"Network detection failed: {e}")
+        return {"status": "error", "message": f"Could not detect network: {e}"}
+    
+    if not network:
+        return {"status": "error", "message": "No network detected. Are you connected to WiFi?"}
+    
+    # Start scan
+    background_tasks.add_task(run_network_device_scan, network, db)
+    return {"status": "started", "network": network, "message": f"Scanning {network} for devices..."}
+
+
+async def run_network_device_scan(network: str, db: Session):
+    """Scans network and discovers all devices"""
+    from websocket_manager import manager
+    
+    logger.info(f"Starting device discovery on {network}")
+    
+    try:
+        nm = nmap.PortScanner()
+        # Fast scan - ping sweep only
+        nm.scan(hosts=network, arguments="-sn -T4 --privileged")
+        
+        devices_found = 0
+        for host in nm.all_hosts():
+            if nm[host].state() == "up":
+                # Get hostname
+                hostname = nm[host].hostname() or "Unknown"
+                
+                # Get MAC if available
+                mac = None
+                vendor = "Unknown"
+                if 'addresses' in nm[host] and 'mac' in nm[host]['addresses']:
+                    mac = nm[host]['addresses']['mac']
+                    # Try to get vendor from OUI
+                    try:
+                        if 'vendor' in nm[host]:
+                            vendor = list(nm[host]['vendor'].values())[0] if nm[host]['vendor'] else "Unknown"
+                    except:
+                        pass
+                
+                # Check if device exists
+                existing = db.query(Device).filter(Device.ip == host).first()
+                if existing:
+                    existing.last_seen = datetime.utcnow()
+                    existing.hostname = hostname if hostname != "Unknown" else existing.hostname
+                else:
+                    device = Device(
+                        ip=host,
+                        mac=mac,
+                        hostname=hostname,
+                        vendor=vendor,
+                        protocol="WiFi",
+                        risk_level="Medium",
+                        risk_score=50,
+                        last_seen=datetime.utcnow()
+                    )
+                    db.add(device)
+                    devices_found += 1
+                    
+                    # Notify via WebSocket
+                    manager.broadcast({
+                        "event": "device_found",
+                        "device": {
+                            "ip": host,
+                            "hostname": hostname,
+                            "mac": mac,
+                            "vendor": vendor
+                        }
+                    })
+        
+        db.commit()
+        
+        manager.broadcast({
+            "event": "scan_finished",
+            "type": "network_discovery",
+            "network": network,
+            "devices_found": devices_found
+        })
+        
+        logger.info(f"Found {devices_found} new devices on {network}")
+        
+    except Exception as e:
+        logger.error(f"Device scan error: {e}")
+        from websocket_manager import manager
+        manager.broadcast({
+            "event": "scan_error",
+            "message": str(e)
+        })

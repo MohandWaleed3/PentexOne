@@ -119,11 +119,25 @@ const app = {
             this.showToast(`New device discovered: ${data.device.hostname}`, 'info');
             this.fetchDevices();
             this.fetchSummary();
+            this.fetchAISecurityScore();
         } else if (data.event === 'vulnerability_found') {
             this.showToast(`Vulnerability detected: ${data.vulnerability.vuln_type}`, 'risk');
             this.fetchDevices();
         } else if (data.event === 'scan_progress') {
             this.updateScanProgress(data.progress, data.message);
+        } else if (data.event === 'scan_finished') {
+            this.showToast(`Scan complete: Found ${data.count} devices.`, 'success');
+            this.updateScanProgress(100, `Scan finished.`);
+            setTimeout(() => {
+                document.getElementById("scanProgressContainer").classList.add("hidden");
+                this.fetchDevices();
+                this.fetchSummary();
+                this.fetchAISuggestions();
+                this.fetchAISecurityScore();
+            }, 2000);
+        } else if (data.event === 'scan_error') {
+            this.showToast(`Scan Error: ${data.message}`, 'risk');
+            this.updateScanProgress(0, `Error: ${data.message}`);
         }
     },
 
@@ -627,9 +641,17 @@ const app = {
 
     async testPorts() {
         if (!this.selectedDevice) return;
+        
+        // Check if device has a valid IP (not Z-Wave, BLE, etc.)
+        const ip = this.selectedDevice.ip;
+        if (ip.startsWith('ZW:') || ip.startsWith('BLE_') || ip.startsWith('ZB:')) {
+            alert(`Port scanning is not available for ${this.selectedDevice.protocol} devices.\nThis feature requires an IP-based device (Wi-Fi/Ethernet).`);
+            return;
+        }
+        
         try {
-            await fetch(`${API_BASE}/wireless/test/ports/${this.selectedDevice.ip}`, { method: "POST" });
-            alert(`Started Deep Port Scan on ${this.selectedDevice.ip}`);
+            await fetch(`${API_BASE}/wireless/test/ports/${ip}`, { method: "POST" });
+            alert(`Started Deep Port Scan on ${ip}`);
             setTimeout(() => this.fetchDevices(), 5000); // Check results after a bit
         } catch (e) {
             alert("Error starting port scan");
@@ -638,9 +660,17 @@ const app = {
 
     async testCreds() {
         if (!this.selectedDevice) return;
+        
+        // Check if device has a valid IP (not Z-Wave, BLE, etc.)
+        const ip = this.selectedDevice.ip;
+        if (ip.startsWith('ZW:') || ip.startsWith('BLE_') || ip.startsWith('ZB:')) {
+            alert(`Credential testing is not available for ${this.selectedDevice.protocol} devices.\nThis feature requires an IP-based device (Wi-Fi/Ethernet).`);
+            return;
+        }
+        
         try {
-            await fetch(`${API_BASE}/wireless/test/credentials/${this.selectedDevice.ip}`, { method: "POST" });
-            alert(`Started Default Credentials Test on ${this.selectedDevice.ip}`);
+            await fetch(`${API_BASE}/wireless/test/credentials/${ip}`, { method: "POST" });
+            alert(`Started Default Credentials Test on ${ip}`);
             setTimeout(() => this.fetchDevices(), 5000);
         } catch (e) {
             alert("Error starting credentials test");
