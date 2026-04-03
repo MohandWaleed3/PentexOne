@@ -9,6 +9,10 @@ import platform
 import re
 import ssl
 import struct
+import logging
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 try:
     from bleak import BleakScanner
@@ -88,7 +92,7 @@ async def run_port_scan(ip: str, db: Session):
                 ))
             db.commit()
     except Exception as e:
-        print(f"Port scan error: {e}")
+        logger.error(f"Port scan error: {e}")
 
 
 # ────────────────────────────────────────────────────────────
@@ -232,7 +236,7 @@ async def run_bluetooth_scan(db: Session):
                 ))
             db.commit()
     except Exception as e:
-        print(f"BLE Scan Error: {e}")
+        logger.error(f"BLE Scan Error: {e}")
 
 
 # ────────────────────────────────────────────────────────────

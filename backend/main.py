@@ -5,8 +5,13 @@ from fastapi.responses import RedirectResponse, HTMLResponse, FileResponse
 from pydantic import BaseModel
 import asyncio
 import os
+import logging
 
-from routers import iot, access_control, wifi_bt, reports
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+from routers import iot, access_control, wifi_bt, reports, ai
 from database import init_db, get_db, Setting
 from sqlalchemy.orm import Session
 from fastapi import Depends
@@ -16,8 +21,10 @@ from models import SettingUpdate
 init_db()
 
 # ===================== AUTH =====================
-VALID_USERNAME = "admin"
-VALID_PASSWORD = "pentex2024"
+# SECURITY: In production, use environment variables or a secure vault
+import os
+VALID_USERNAME = os.getenv("PENTEX_USERNAME", "admin")
+VALID_PASSWORD = os.getenv("PENTEX_PASSWORD", "pentex2024")  # Change this!
 
 class LoginRequest(BaseModel):
     username: str
@@ -37,6 +44,7 @@ app.add_middleware(
 app.include_router(iot.router)
 app.include_router(access_control.router)
 app.include_router(wifi_bt.router)
+app.include_router(ai.router)
 app.include_router(reports.router)
 
 @app.get("/settings")
@@ -82,4 +90,4 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_json({"event": "heartbeat", "status": "active"})
             await asyncio.sleep(5)
     except Exception as e:
-        print(f"WebSocket Error: {e}")
+        logger.error(f"WebSocket Error: {e}")

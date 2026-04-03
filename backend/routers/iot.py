@@ -12,6 +12,10 @@ from typing import List, Optional
 import json
 import re
 import os
+import logging
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 from database import get_db, Device, Vulnerability
 from models import DeviceOut, ScanRequest, ScanStatus
@@ -117,7 +121,7 @@ async def discover_networks():
                             "interface": current_iface,
                             "type": iface_type
                         })
-                        print(f"[discover] {network} on {current_iface} ({iface_type})")
+                        logger.info(f"[discover] {network} on {current_iface} ({iface_type})")
 
         else:  # Linux
             result = subprocess.run(

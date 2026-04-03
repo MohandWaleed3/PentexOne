@@ -20,6 +20,8 @@ const app = {
         this.initWebSocket();
         this.discoverNetworks(); // لقط الشبكات تلقائي عند البداية
         this.fetchHardwareStatus();
+        this.fetchAISuggestions(); // AI suggestions on load
+        this.fetchAISecurityScore(); // AI security score
     },
 
     initCharts() {
@@ -873,11 +875,177 @@ const app = {
                 this.renderDeviceDetails();
                 this.fetchSummary();
                 this.updateProtocolChart();
+                this.fetchAISuggestions();
+                this.fetchAISecurityScore();
             } catch (e) {
                 console.error(e);
                 alert("Failed to clear data.");
             }
         }
+    },
+    
+    // ======== AI FUNCTIONS ========
+    async fetchAISuggestions() {
+        try {
+            const res = await fetch(`${API_BASE}/ai/suggestions`);
+            if (res.ok) {
+                const data = await res.json();
+                this.renderAISuggestions(data.suggestions);
+            }
+        } catch (e) {
+            console.error("Failed to fetch AI suggestions", e);
+        }
+    },
+    
+    renderAISuggestions(suggestions) {
+        const container = document.getElementById('aiSuggestions');
+        if (!container) return;
+        
+        if (!suggestions || suggestions.length === 0) {
+            container.innerHTML = `
+                <div style="color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px;">
+                    <i class="fa-solid fa-check-circle" style="color: var(--status-safe); font-size: 24px; margin-bottom: 10px;"></i>
+                    <p>No critical recommendations at this time</p>
+                </div>`;
+            return;
+        }
+        
+        container.innerHTML = suggestions.map(s => `
+            <div class="ai-suggestion-item" style="
+                display: flex;
+                align-items: flex-start;
+                gap: 12px;
+                padding: 12px;
+                background: rgba(0,0,0,0.2);
+                border-radius: 8px;
+                border-left: 3px solid ${s.type === 'alert' ? 'var(--status-risk)' : s.type === 'suggested_scan' ? 'var(--accent-blue)' : 'var(--status-medium)'};">
+                <div style="flex-shrink: 0;">
+                    <i class="fa-solid ${s.icon}" style="color: ${s.type === 'alert' ? 'var(--status-risk)' : 'var(--accent-blue)'}; font-size: 16px;"></i>
+                </div>
+                <div style="flex: 1;">
+                    <div style="font-weight: 500; font-size: 13px; margin-bottom: 4px;">${s.title}</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">${s.description}</div>
+                    ${s.action ? `<button class="btn btn-outline-blue" style="margin-top: 8px; font-size: 11px; padding: 4px 10px;" onclick="app.executeSuggestion('${s.action}', ${JSON.stringify(s.device_ids || []).replace(/"/g, "'")})">
+                        Take Action
+                    </button>` : ''}
+                </div>
+            </div>
+        `).join('');
+    },
+    
+    executeSuggestion(action, deviceIds) {
+        if (action.startsWith('startScan')) {
+            const scanType = action.match(/'([^']+)'/)?.[1];
+            if (scanType) {
+                this.startScan(scanType);
+            }
+        } else if (action === 'view_device' && deviceIds && deviceIds.length > 0) {
+            this.selectDevice(deviceIds[0]);
+        } else if (action === 'checkHardware') {
+            this.fetchHardwareStatus();
+        }
+    },
+    
+    async fetchAISecurityScore() {
+        try {
+            const res = await fetch(`${API_BASE}/ai/security-score`);
+            if (res.ok) {
+                const data = await res.json();
+                this.renderAISecurityScore(data.score);
+            }
+        } catch (e) {
+            console.error("Failed to fetch AI security score", e);
+        }
+    },
+    
+    renderAISecurityScore(score) {
+        const scoreValue = document.getElementById('scoreValue');
+        const scoreGrade = document.getElementById('scoreGrade');
+        const scoreDesc = document.getElementById('scoreDescription');
+        const scoreCircle = document.getElementById('securityScoreCircle');
+        
+        if (!scoreValue) return;
+        
+        // Determine color based on score
+        let color = '#22c55e'; // green
+        if (score.score < 60) color = '#f59e0b'; // yellow
+        if (score.score < 40) color = '#ef4444'; // red
+        
+        scoreValue.textContent = Math.round(score.score);
+        scoreGrade.textContent = score.grade;
+        scoreDesc.textContent = score.description;
+        
+        // Update circle gradient
+        scoreCircle.style.background = `conic-gradient(${color} 0% ${score.score}%, rgba(255,255,255,0.1) ${score.score}% 100%)`;
+    },
+    
+    async analyzeDeviceAI() {
+        if (!this.selectedDevice) return;
+        
+        const analysisDiv = document.getElementById('aiDeviceAnalysis');
+        const deviceTypeDiv = document.getElementById('aiDeviceType');
+        const predictedVulnsDiv = document.getElementById('aiPredictedVulns');
+        
+        if (analysisDiv) {
+            analysisDiv.classList.remove('hidden');
+            deviceTypeDiv.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Analyzing...';
+            predictedVulnsDiv.innerHTML = '';
+        }
+        
+        try {
+            const res = await fetch(`${API_BASE}/ai/analyze/device/${this.selectedDevice.id}`);
+            if (res.ok) {
+                const data = await res.json();
+                const analysis = data.analysis;
+                
+                // Device type
+                deviceTypeDiv.innerHTML = `
+                    <strong>Device Type:</strong> ${analysis.device_type.replace('_pattern', '').replace('_', ' ').toUpperCase()}
+                    <span style="margin-left: 10px; opacity: 0.7;">Confidence: ${Math.round(analysis.confidence * 100)}%</span>
+                `;
+                
+                // Predicted vulnerabilities
+                if (analysis.predicted_vulnerabilities && analysis.predicted_vulnerabilities.length > 0) {
+                    predictedVulnsDiv.innerHTML = `
+                        <strong style="display: block; margin-top: 8px;">Predicted Vulnerabilities:</strong>
+                        ${analysis.predicted_vulnerabilities.map(v => `
+                            <div style="margin-top: 4px; padding: 4px 8px; background: rgba(239, 68, 68, 0.2); border-radius: 4px; font-size: 10px;">
+                                <i class="fa-solid fa-triangle-exclamation" style="color: var(--status-risk);"></i>
+                                ${v.vuln_type} (${Math.round(v.confidence * 100)}% confidence)
+                            </div>
+                        `).join('')}
+                    `;
+                } else {
+                    predictedVulnsDiv.innerHTML = `
+                        <span style="color: var(--status-safe); margin-top: 8px; display: block;">
+                            <i class="fa-solid fa-check"></i> No predicted vulnerabilities
+                        </span>`;
+                }
+                
+                // Show anomaly warning if detected
+                if (analysis.is_anomaly) {
+                    this.showToast('Anomaly detected! Device behavior is unusual.', 'warning');
+                }
+            }
+        } catch (e) {
+            console.error('AI analysis failed', e);
+            if (deviceTypeDiv) {
+                deviceTypeDiv.innerHTML = '<span style="color: var(--status-risk);">Analysis failed</span>';
+            }
+        }
+    },
+    
+    async getRemediation(vulnType) {
+        try {
+            const res = await fetch(`${API_BASE}/ai/remediation/${vulnType}`);
+            if (res.ok) {
+                const data = await res.json();
+                return data.remediation;
+            }
+        } catch (e) {
+            console.error('Failed to get remediation', e);
+        }
+        return null;
     }
 };
 
