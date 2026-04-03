@@ -14,6 +14,7 @@ const app = {
         this.fetchCards();
         this.initNetworkSelect();
         this.initCharts();
+        this.discoverNetworks(); // لقط الشبكات تلقائي عند البداية
     },
 
     initChart() {

@@ -28,80 +28,93 @@ scan_state = {
 @router.get("/networks/discover")
 async def discover_networks():
     """يكتشف الشبكات المتاحة على الجهاز"""
+    import subprocess
+    import re
+    import platform
+
+    networks = []
+
     try:
-        import subprocess
-        import re
-        
-        # الحصول على معلومات الشبكات (try different commands for different OS)
-        try:
-            result = subprocess.run(["ip", "route", "show"], capture_output=True, text=True, timeout=5)
-        except FileNotFoundError:
-            # Fallback to ifconfig for macOS
+        system = platform.system()
+
+        if system == "Darwin":  # macOS
+            # 1. تحديد واجهات الـ WiFi عبر networksetup
+            wifi_interfaces = set()
+            try:
+                hw = subprocess.run(
+                    ["networksetup", "-listallhardwareports"],
+                    capture_output=True, text=True, timeout=5
+                )
+                current_hw = ""
+                for line in hw.stdout.split("\n"):
+                    if "Hardware Port:" in line:
+                        current_hw = line.split(":", 1)[1].strip()
+                    elif "Device:" in line:
+                        dev = line.split(":", 1)[1].strip()
+                        if any(k in current_hw for k in ["Wi-Fi", "AirPort", "Wireless"]):
+                            wifi_interfaces.add(dev)
+            except Exception:
+                pass
+
+            # 2. استخراج IPs من ifconfig
             result = subprocess.run(["ifconfig"], capture_output=True, text=True, timeout=5)
-            
-            # Parse ifconfig output
-            networks = []
-            current_interface = None
-            lines = result.stdout.split("\n")
-            
-            for i, line in enumerate(lines):
-                line = line.strip()
-                if line and not line.startswith(" "):
-                    # Interface line
-                    if ":" in line and "flags=" in line:
-                        current_interface = line.split(":")[0].strip()
-                elif "inet " in line and current_interface and "127.0.0.1" not in line:
-                    # IP line (exclude localhost)
-                    import re
-                    ip_match = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', line)
-                    if ip_match:
-                        ip = ip_match.group(1)
-                        # Convert to network range (assuming /24)
-                        network_parts = ip.split(".")
-                        network = f"{network_parts[0]}.{network_parts[1]}.{network_parts[2]}.0/24"
-                        
-                        # Detect interface type
-                        interface_type = "WiFi" if (
-                            current_interface.startswith("en") and 
-                            any(x in current_interface.lower() for x in ["wi", "air", "wl"])
-                        ) or current_interface.startswith("wlan") else "Ethernet"
-                        
+            current_iface = None
+            for line in result.stdout.split("\n"):
+                if line and not line[0].isspace():
+                    m = re.match(r'^(\S+?):', line)
+                    if m:
+                        current_iface = m.group(1)
+                elif current_iface:
+                    ip_m = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', line)
+                    mask_m = re.search(r'netmask (0x[0-9a-fA-F]+|\d+\.\d+\.\d+\.\d+)', line)
+                    if ip_m and mask_m:
+                        ip = ip_m.group(1)
+                        if ip.startswith("127."):
+                            continue
+                        mask_str = mask_m.group(1)
+                        if mask_str.startswith("0x"):
+                            cidr = bin(int(mask_str, 16)).count("1")
+                        else:
+                            cidr = sum(bin(int(x)).count("1") for x in mask_str.split("."))
+                        parts = ip.split(".")
+                        network = f"{parts[0]}.{parts[1]}.{parts[2]}.0/{cidr}"
+                        iface_type = "WiFi" if current_iface in wifi_interfaces else (
+                            "WiFi" if current_iface == "en0" else "Ethernet"
+                        )
                         networks.append({
                             "network": network,
-                            "interface": current_interface,
-                            "type": interface_type
+                            "interface": current_iface,
+                            "type": iface_type
                         })
-                        
-                        # Debug output
-                        print(f"Found network: {network} on {current_interface} ({interface_type})")
-            
-            if networks:
-                return {"networks": networks, "count": len(networks)}
-        
-        networks = []
-        
-        # استخراج الشبكات من output
-        for line in result.stdout.split("\n"):
-            if "dev" in line and "src" in line:
-                # استخراج network range
-                match = re.search(r'(\d+\.\d+\.\d+\.\d+/\d+)', line)
-                if match:
-                    network = match.group(1)
-                    # استخراج interface name
-                    iface_match = re.search(r'dev (\w+)', line)
-                    iface = iface_match.group(1) if iface_match else "unknown"
-                    
-                    networks.append({
-                        "network": network,
-                        "interface": iface,
-                        "type": "WiFi" if iface.startswith("wlan") or iface.startswith("wl") else "Ethernet"
-                    })
-        
-        return {"networks": networks, "count": len(networks)}
-        
+                        print(f"[discover] {network} on {current_iface} ({iface_type})")
+
+        else:  # Linux
+            result = subprocess.run(
+                ["ip", "route", "show"], capture_output=True, text=True, timeout=5
+            )
+            for line in result.stdout.split("\n"):
+                if "dev" in line and "/" in line:
+                    match = re.search(r'(\d+\.\d+\.\d+\.\d+/\d+)', line)
+                    if match:
+                        network = match.group(1)
+                        if network.startswith("127."):
+                            continue
+                        iface_m = re.search(r'dev (\S+)', line)
+                        iface = iface_m.group(1) if iface_m else "unknown"
+                        networks.append({
+                            "network": network,
+                            "interface": iface,
+                            "type": "WiFi" if (
+                                iface.startswith("wlan") or iface.startswith("wl")
+                            ) else "Ethernet"
+                        })
+
     except Exception as e:
-        # Return error instead of fallback networks
+        import traceback
+        traceback.print_exc()
         return {"networks": [], "count": 0, "error": str(e)}
+
+    return {"networks": networks, "count": len(networks)}
 
 
 # ────────────────────────────────────────────────────────────
