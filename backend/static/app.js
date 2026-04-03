@@ -305,8 +305,12 @@ const app = {
         discoverBtn.disabled = true;
         
         try {
+            // 1. اكتشاف الشبكات المتصل بها (IP Subnets)
             const res = await fetch(`${API_BASE}/iot/networks/discover`);
             const data = await res.json();
+            
+            // 2. اكتشاف الموجات الجوية المحيطة (Nearby SSIDs) - في الخلفية
+            this.scanSsids();
             
             // Clear existing options
             networkSelect.innerHTML = '<option value="">Select a network...</option>';
@@ -335,6 +339,75 @@ const app = {
             discoverBtn.innerHTML = '<i class="fa-solid fa-search"></i> Discover';
             discoverBtn.disabled = false;
         }
+    },
+
+    async scanSsids() {
+        const ssidsList = document.getElementById("ssidsList");
+        const container = document.getElementById("nearbySsidsContainer");
+        
+        container.classList.remove("hidden");
+        ssidsList.innerHTML = '<div style="font-size: 11px; color: var(--text-muted);"><i class="fa-solid fa-satellite-dish fa-fade"></i> Scanning airwaves...</div>';
+        
+        try {
+            const res = await fetch(`${API_BASE}/wireless/scan/ssids`);
+            const data = await res.json();
+            
+            if (data.status === "success" && data.ssids.length > 0) {
+                this.renderSsids(data.ssids);
+            } else {
+                ssidsList.innerHTML = '<div style="font-size: 11px; color: var(--text-muted);">No other SSIDs detected or radio busy.</div>';
+            }
+        } catch (e) {
+            ssidsList.innerHTML = '<div style="font-size: 11px; color: var(--text-muted);">Failed to scan SSIDs.</div>';
+        }
+    },
+
+    renderSsids(ssids) {
+        const ssidsList = document.getElementById("ssidsList");
+        ssidsList.innerHTML = "";
+        
+        ssids.forEach(net => {
+            const div = document.createElement("div");
+            div.className = "ssid-item";
+            div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; background: rgba(255,255,255,0.05); border-radius: 4px; font-size: 11px;";
+            
+            const signalColor = this.getSignalColor(net.rssi);
+            const signalIcon = this.getSignalIcon(net.rssi);
+            
+            div.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid ${signalIcon}" style="color: ${signalColor}"></i>
+                    <span style="font-weight: 500;">${net.ssid}</span>
+                </div>
+                <div style="color: var(--text-muted); font-size: 10px;">
+                    <i class="fa-solid fa-lock" style="font-size: 9px;"></i> ${net.security.split(' ')[0]}
+                </div>
+            `;
+            
+            // Clicking SSID copies it to input for advanced scanning if user wants
+            div.style.cursor = "pointer";
+            div.onclick = () => {
+                this.showToast(`Selected SSID: ${net.ssid}`, 'info');
+            };
+            
+            ssidsList.appendChild(div);
+        });
+    },
+
+    getSignalColor(rssi) {
+        if (rssi === "N/A") return "var(--text-muted)";
+        const r = parseInt(rssi);
+        if (r > -60) return "#22c55e"; // Excellent
+        if (r > -75) return "#f59e0b"; // Good
+        return "#ef4444"; // Poor
+    },
+
+    getSignalIcon(rssi) {
+        if (rssi === "N/A") return "fa-wifi";
+        const r = parseInt(rssi);
+        if (r > -60) return "fa-wifi";
+        if (r > -80) return "fa-wifi";
+        return "fa-wifi"; // Should find a weak wifi icon if possible, or just use colors
     },
 
     async startScan(type) {

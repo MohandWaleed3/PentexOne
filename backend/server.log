@@ -1,4 +1,65 @@
-INFO:     Started server process [60511]
+INFO:     Started server process [64125]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55949 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55949 - "GET /style.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55951 - "GET /app.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55951 - "GET /reports/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55949 - "GET /iot/devices HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55954 - "GET /rfid/cards HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56055 - "GET /static/app.js HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56238 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56238 - "GET /app.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56238 - "GET /reports/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56239 - "GET /iot/devices HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56241 - "GET /rfid/cards HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56259 - "GET / HTTP/1.1" 307 Temporary Redirect
+INFO:     127.0.0.1:56259 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56261 - "GET /iot/devices HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56259 - "GET /reports/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56263 - "GET /rfid/cards HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56299 - "GET /style.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56299 - "GET /reports/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56300 - "GET /iot/devices HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56302 - "GET /rfid/cards HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56322 - "GET /static/index.html HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56322 - "GET / HTTP/1.1" 307 Temporary Redirect
+INFO:     127.0.0.1:56322 - "GET /reports/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56324 - "GET /iot/devices HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56345 - "GET /rfid/cards HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56523 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56523 - "GET /app.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56523 - "GET /reports/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56524 - "GET /iot/devices HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56526 - "GET /rfid/cards HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56561 - "GET / HTTP/1.1" 307 Temporary Redirect
+INFO:     127.0.0.1:56561 - "GET /reports/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56563 - "GET /iot/devices HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56565 - "GET /rfid/cards HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56585 - "PUT /settings HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56589 - "GET /static/app.js HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56591 - "GET /app.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56594 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56594 - "GET /style.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56594 - "GET /reports/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56596 - "GET /iot/devices HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56598 - "GET /rfid/cards HTTP/1.1" 200 OK
+[discover] 192.168.1.0/24 on en0 (WiFi)
+INFO:     127.0.0.1:56600 - "GET /iot/networks/discover HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56600 - "GET /wireless/scan/ssids HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56710 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56710 - "GET /style.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56711 - "GET /app.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:56711 - "GET /reports/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56710 - "GET /iot/devices HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56713 - "GET /rfid/cards HTTP/1.1" 200 OK
+[discover] 192.168.1.0/24 on en0 (WiFi)
+INFO:     127.0.0.1:56713 - "GET /iot/networks/discover HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56713 - "GET /wireless/scan/ssids HTTP/1.1" 200 OK
+[discover] 192.168.1.0/24 on en0 (WiFi)
+INFO:     127.0.0.1:56715 - "GET /iot/networks/discover HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56715 - "GET /wireless/scan/ssids HTTP/1.1" 200 OK
+[discover] 192.168.1.0/24 on en0 (WiFi)
+INFO:     127.0.0.1:58280 - "GET /iot/networks/discover HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58280 - "GET /wireless/scan/ssids HTTP/1.1" 200 OK

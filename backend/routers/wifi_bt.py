@@ -5,6 +5,8 @@ import nmap
 from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from datetime import datetime
+import platform
+import re
 
 try:
     from bleak import BleakScanner
@@ -222,3 +224,104 @@ async def run_bluetooth_scan(db: Session):
             db.commit()
     except Exception as e:
         print(f"BLE Scan Error: {e}")
+
+
+# ────────────────────────────────────────────────────────────
+# 6. مسح شبكات الواي فاي القريبة (SSIDs)
+# ────────────────────────────────────────────────────────────
+@router.get("/scan/ssids")
+async def scan_nearby_ssids():
+    """يكتشف كل شبكات الواي فاي القريبة (SSIDs)"""
+    system = platform.system()
+    networks = []
+
+    try:
+        if system == "Darwin":  # macOS
+            # استخدام system_profiler للحصول على معلومات الأيربورت
+            result = subprocess.run(
+                ["system_profiler", "SPAirPortDataType"],
+                capture_output=True, text=True, timeout=15
+            )
+            
+            # استخراج الأقسام المهتمين بها
+            output = result.stdout
+            
+            # البحث عن "Other Local Wi-Fi Networks" أو "Current Network Information"
+            # سنقوم بتقسيم المخرجات بناءً على السطور
+            ssids_found = []
+            current_ssid = None
+            
+            lines = output.split("\n")
+            in_networks_section = False
+            
+            for line in lines:
+                if not line.strip(): continue
+                
+                if "Other Local Wi-Fi Networks:" in line or "Current Network Information:" in line:
+                    in_networks_section = True
+                    continue
+                
+                # إذا وصلنا لقسم جديد غير متعلق بالشبكات، نوقف البحث
+                if in_networks_section and line.strip() and not line.startswith(" "):
+                     in_networks_section = False
+
+                if in_networks_section:
+                    line_stripped = line.strip()
+                    # سطر الـ SSID في system_profiler ينتهي بـ : 
+                    # ويكون مسبوقاً بمسافات (عادة 12 مسافة للشبكات الأخرى)
+                    if line_stripped.endswith(":") and ":" not in line_stripped[:-1]:
+                        current_ssid = line_stripped[:-1]
+                        if current_ssid == "SSID": continue # تجاهل العناوين الفرعية
+                        
+                        networks.append({
+                            "ssid": current_ssid,
+                            "rssi": "N/A",
+                            "security": "Unknown",
+                            "channel": "Unknown"
+                        })
+                    elif current_ssid and ":" in line:
+                        parts = line.split(":", 1)
+                        key = parts[0].strip()
+                        val = parts[1].strip()
+                        
+                        if "Signal / Noise" in key:
+                            rssi_match = re.search(r'(-\d+) dBm', val)
+                            if rssi_match:
+                                networks[-1]["rssi"] = int(rssi_match.group(1))
+                        elif "Security" in key:
+                            networks[-1]["security"] = val
+                        elif "Channel" in key:
+                            networks[-1]["channel"] = val
+
+        else:  # Linux (nmcli)
+            try:
+                result = subprocess.run(
+                    ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY,CHAN", "dev", "wifi", "list"],
+                    capture_output=True, text=True, timeout=10
+                )
+                for line in result.stdout.split("\n"):
+                    if not line: continue
+                    parts = line.split(":")
+                    if len(parts) >= 4:
+                        networks.append({
+                            "ssid": parts[0],
+                            "rssi": parts[1],
+                            "security": parts[2],
+                            "channel": parts[3]
+                        })
+            except Exception:
+                # Fallback to iwlist if nmcli fails
+                pass
+
+        # تنظيف النتائج (إزالة المتكرر)
+        seen = set()
+        unique_networks = []
+        for n in networks:
+            if n["ssid"] and n["ssid"] not in seen:
+                unique_networks.append(n)
+                seen.add(n["ssid"])
+
+        return {"status": "success", "ssids": unique_networks, "count": len(unique_networks)}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

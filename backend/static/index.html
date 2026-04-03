@@ -65,8 +65,20 @@
                                 </button>
                             </div>
                             <div class="input-action" style="margin-top: 10px;">
-                                <input type="text" id="networkInput" value="192.168.1.0/24" placeholder="Or enter network manually">
+                                <input type="text" id="networkInput" value="192.168.1.0/24"
+                                    placeholder="Or enter network manually">
                                 <button class="btn btn-outline-blue" onclick="app.startScan('wifi')">Scan IP</button>
+                            </div>
+                        </div>
+
+                        <!-- قسم الشبكات المحيطة (SSIDs) -->
+                        <div id="nearbySsidsContainer" class="nearby-ssids-list hidden"
+                            style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+                            <h4 style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Nearby Airwaves
+                                (SSIDs):</h4>
+                            <div id="ssidsList"
+                                style="max-height: 150px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;">
+                                <!-- سيتم ملؤه بواسطة JS -->
                             </div>
                         </div>
                     </div>
