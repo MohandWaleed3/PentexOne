@@ -1,5 +1,6 @@
 #!/bin/bash
 # PentexOne - Quick Fix & Setup Script
+# Works on macOS, Linux, and Raspberry Pi
 
 echo "🔧 PentexOne Setup & Fix Script"
 echo "================================"
@@ -15,9 +16,33 @@ fi
 echo "✅ Python3 found"
 echo ""
 
+# Check if Raspberry Pi
+IS_RPI=false
+if [ -f /proc/cpuinfo ] && grep -q "Raspberry Pi" /proc/cpuinfo; then
+    IS_RPI=true
+    echo "🍓 Raspberry Pi detected!"
+    echo ""
+fi
+
 # Install dependencies
 echo "📦 Installing dependencies..."
 cd "$(dirname "$0")"
+
+# Create virtual environment if it doesn't exist
+if [ ! -d "venv" ]; then
+    echo "📦 Creating virtual environment..."
+    python3 -m venv venv
+    echo "✅ Virtual environment created"
+fi
+
+# Activate virtual environment
+if [ "$IS_RPI" = true ]; then
+    source venv/bin/activate
+else
+    source venv/bin/activate
+fi
+
+pip3 install --upgrade pip
 pip3 install -r requirements.txt
 if [ $? -ne 0 ]; then
     echo "❌ Failed to install dependencies"
@@ -73,11 +98,48 @@ else
 fi
 echo ""
 
+# Raspberry Pi specific setup
+if [ "$IS_RPI" = true ]; then
+    echo "🍓 Setting up Raspberry Pi specific configuration..."
+    
+    # Install system dependencies if running as root
+    if [ "$EUID" -eq 0 ]; then
+        echo "📦 Installing system packages..."
+        apt-get update
+        apt-get install -y nmap bluez bluez-tools libbluetooth-dev libglib2.0-dev arp-scan netdiscover
+        
+        # Enable Bluetooth
+        systemctl enable bluetooth
+        systemctl start bluetooth
+        echo "✅ Bluetooth enabled"
+        
+        # Verify arp-scan installed
+        if command -v arp-scan &> /dev/null; then
+            echo "✅ arp-scan installed (better device discovery)"
+        else
+            echo "⚠️  arp-scan not installed, using nmap fallback"
+        fi
+    else
+        echo "⚠️  Run with sudo to install system packages"
+        echo "   sudo ./setup.sh"
+    fi
+    echo ""
+fi
+
 echo "================================"
 echo "✅ Setup complete!"
 echo ""
 echo "🚀 To start the server:"
+echo "   Option 1 - Quick start:"
+echo "   ./start.sh"
+echo ""
+echo "   Option 2 - Manual start:"
+echo "   source venv/bin/activate"
 echo "   python3 main.py"
+echo ""
+echo "   Option 3 - Service (Raspberry Pi only):"
+echo "   sudo ./rpi_setup.sh  # Install service"
+echo "   sudo systemctl start pentexone"
 echo ""
 echo "🌐 Dashboard: http://localhost:8000/dashboard"
 echo "📚 API Docs:  http://localhost:8000/docs"

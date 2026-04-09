@@ -24,6 +24,172 @@ from security_engine import calculate_risk
 router = APIRouter(prefix="/iot", tags=["IoT Security"])
 
 # Hardware detection helpers
+def get_mac_from_arp_cache(ip_address: str) -> tuple:
+    """
+    Get MAC address and vendor from system ARP cache.
+    Returns (mac, vendor) or (None, None) if not found.
+    """
+    try:
+        # Try reading /proc/net/arp on Linux
+        if os.path.exists('/proc/net/arp'):
+            with open('/proc/net/arp', 'r') as f:
+                lines = f.readlines()
+                for line in lines[1:]:  # Skip header
+                    parts = line.split()
+                    if len(parts) >= 6 and parts[0] == ip_address:
+                        mac = parts[3]
+                        if mac != '00:00:00:00:00:00':
+                            # Try to get vendor from MAC OUI
+                            vendor = "Unknown"
+                            if len(mac.split(':')) >= 3:
+                                oui = mac[:8].upper()
+                                # Extended OUI lookup (common vendors)
+                                oui_db = {
+                                    # Major Vendors
+                                    'AA:BB:CC': 'Generic',
+                                    '00:00:00': 'Xerox',
+                                    '00:00:5E': 'IANA',
+                                    '00:01:02': 'Apple',
+                                    '00:03:47': 'Cisco',
+                                    '00:04:5A': 'HP',
+                                    '00:05:5D': 'Dell',
+                                    '00:07:E9': 'Belkin',
+                                    '00:0A:F6': 'TP-Link',
+                                    '00:0C:29': 'VMware',
+                                    '00:11:2F': 'Dell',
+                                    '00:13:02': 'Samsung',
+                                    '00:14:2F': 'Toshiba',
+                                    '00:15:58': 'Amazon',
+                                    '00:16:EA': 'Sony',
+                                    '00:17:9A': 'LG',
+                                    '00:18:4D': 'Huawei',
+                                    '00:19:7E': 'Lenovo',
+                                    '00:1A:2B': 'Cisco',
+                                    '00:1B:44': 'Intel',
+                                    '00:1C:BF': 'Google',
+                                    '00:1D:7E': 'Microsoft',
+                                    '00:1E:68': 'Asus',
+                                    '00:1F:E2': 'Netgear',
+                                    '00:21:5A': 'Linksys',
+                                    '00:22:6B': 'LG',
+                                    '00:23:CD': 'Honeywell',
+                                    '00:24:D2': 'Alps',
+                                    '00:25:00': 'Realtek',
+                                    '00:26:AB': 'Qualcomm',
+                                    '00:27:19': 'Panasonic',
+                                    '00:50:56': 'VMware',
+                                    '00:60:2F': 'Cisco',
+                                    '00:80:C2': 'Advanced Micro Devices',
+                                    '00:A0:C9': 'Intel',
+                                    '00:B0:D0': 'Broadcom',
+                                    '00:C0:CA': 'Sanyo',
+                                    '00:D0:59': 'AVM',
+                                    '00:E0:4C': 'Realtek',
+                                    '00:E3:B2': 'Samsung',
+                                    '00:EC:71': 'Nokia',
+                                    '00:F4:6F': 'LGE',
+                                    
+                                    # Raspberry Pi
+                                    'B8:27:EB': 'Raspberry Pi Foundation',
+                                    'DC:A6:32': 'Intel',
+                                    'E4:5F:01': 'Samsung',
+                                    
+                                    # Apple
+                                    'F0:18:98': 'Apple',
+                                    '00:1C:B3': 'Apple',
+                                    '00:1E:C2': 'Apple',
+                                    '00:21:E9': 'Apple',
+                                    '00:23:12': 'Apple',
+                                    '00:25:00': 'Apple',
+                                    '00:26:08': 'Apple',
+                                    '00:26:B0': 'Apple',
+                                    '00:26:BB': 'Apple',
+                                    '00:26:DF': 'Apple',
+                                    '00:27:22': 'Apple',
+                                    '00:56:CB': 'Apple',
+                                    '00:61:71': 'Apple',
+                                    '00:71:CC': 'Apple',
+                                    '00:7E:66': 'Apple',
+                                    '00:7F:17': 'Apple',
+                                    '00:88:65': 'Apple',
+                                    '00:8E:87': 'Apple',
+                                    '00:9D:8B': 'Apple',
+                                    '00:A2:DA': 'Apple',
+                                    '00:A6:DE': 'Apple',
+                                    '00:AC:87': 'Apple',
+                                    '00:B4:F5': 'Apple',
+                                    '00:C6:10': 'Apple',
+                                    '00:CD:FE': 'Apple',
+                                    '00:D1:21': 'Apple',
+                                    '00:E1:2A': 'Apple',
+                                    '00:E6:33': 'Apple',
+                                    '00:F8:1C': 'Apple',
+                                    '00:FB:BC': 'Apple',
+                                    
+                                    # Android/Smartphones
+                                    '00:1A:11': 'Samsung',
+                                    '00:1B:9E': 'Samsung',
+                                    '00:1E:7D': 'Samsung',
+                                    '00:21:4C': 'Samsung',
+                                    '00:23:39': 'Samsung',
+                                    '00:24:54': 'Samsung',
+                                    '00:26:37': 'Samsung',
+                                    '00:26:86': 'Samsung',
+                                    '00:26:ED': 'Samsung',
+                                    '00:27:17': 'Samsung',
+                                    '00:5C:A2': 'Samsung',
+                                    '00:7C:B8': 'Samsung',
+                                    '00:9B:9C': 'Samsung',
+                                    '00:9E:C8': 'Samsung',
+                                    '00:A2:EE': 'Samsung',
+                                    '00:B3:4C': 'Samsung',
+                                    '00:C3:DD': 'Samsung',
+                                    '00:D6:3B': 'Samsung',
+                                    '00:E0:91': 'Samsung',
+                                    '00:F6:8F': 'Samsung',
+                                    
+                                    # IoT Vendors
+                                    '00:12:4B': 'Philips',
+                                    '00:17:88': 'Signify (Philips Hue)',
+                                    '00:1F:E4': 'Xiaomi',
+                                    '00:27:F8': 'Ubiquiti',
+                                    '00:2A:10': 'Ecobee',
+                                    '00:30:66': 'Siemens',
+                                    '00:50:C2': 'IEEE 802.15.4',
+                                    '00:66:9B': 'Sonos',
+                                    '00:71:A2': 'Ring',
+                                    '00:86:A0': 'Nest',
+                                    '00:9D:6B': 'Sonoff',
+                                    '00:AA:70': 'Espressif',
+                                    '00:AF:C8': 'Amazon',
+                                    '00:BB:3A': 'Fitbit',
+                                    '00:CC:6E': 'Crestron',
+                                    '00:DD:1F': 'Bose',
+                                    '00:EE:BD': 'iRobot',
+                                    '00:FF:FF': 'Generic IoT'
+                                }
+                                vendor = oui_db.get(oui, "Unknown")
+                            return (mac, vendor)
+        
+        # Fallback: use arp command
+        result = subprocess.run(
+            ['arp', '-n', ip_address],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            for line in result.stdout.split('\n'):
+                if ip_address in line:
+                    parts = line.split()
+                    for part in parts:
+                        if ':' in part and len(part) == 17:  # MAC format
+                            return (part.upper(), "Unknown")
+    except Exception as e:
+        logger.debug(f"ARP cache lookup failed for {ip_address}: {e}")
+    
+    return (None, None)
+
 def detect_all_dongles() -> dict:
     """
     Detects ALL connected hardware dongles and returns detailed info.
@@ -307,47 +473,155 @@ def run_nmap_scan(network: str, db: Session):
     manager.broadcast({"event": "scan_progress", "progress": 0, "message": scan_state["message"]})
 
     try:
-        nm = nmap.PortScanner()
-        # فحص سريع: اكتشاف الأجهزة + أهم المنافذ
-        scan_state["message"] = "جارٍ مسح الشبكة..."
-        manager.broadcast({"event": "scan_progress", "progress": 20, "message": scan_state["message"]})
+        # Phase 1: ARP scan to discover ALL devices on local network
+        scan_state["message"] = "اكتشاف الأجهزة على الشبكة..."
+        manager.broadcast({"event": "scan_progress", "progress": 10, "message": scan_state["message"]})
         
-        nm.scan(hosts=network, arguments="-sV -T4 --open -p 21,22,23,25,53,80,443,554,1900,2323,4444,5555,8080,8888,9000")
-
+        logger.info(f"Starting ARP scan on {network}")
+        
+        # Use ARP scan for local network discovery (more reliable)
+        try:
+            result = subprocess.run(
+                ['arp-scan', '--localnet', '--quiet'],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            arp_devices = {}
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    # Parse ARP scan output: IP\tMAC\tVendor
+                    parts = line.split('\t')
+                    if len(parts) >= 2 and ':' in parts[1]:  # Valid MAC address
+                        ip = parts[0]
+                        mac = parts[1].upper()
+                        vendor = parts[2] if len(parts) > 2 else "Unknown"
+                        arp_devices[ip] = {'mac': mac, 'vendor': vendor}
+                        logger.info(f"ARP discovered: {ip} - {mac} - {vendor}")
+            
+            logger.info(f"ARP scan found {len(arp_devices)} devices")
+        except FileNotFoundError:
+            logger.warning("arp-scan not installed, falling back to nmap ping scan")
+            arp_devices = {}
+        except Exception as e:
+            logger.error(f"ARP scan failed: {e}")
+            arp_devices = {}
+        
+        # Phase 2: Nmap service detection on discovered devices
+        nm = nmap.PortScanner()
+        scan_state["message"] = "فحص الخدمات والمنافذ..."
+        manager.broadcast({"event": "scan_progress", "progress": 30, "message": scan_state["message"]})
+        
+        # First, do a simple ping scan to find all hosts
+        nm.scan(hosts=network, arguments="-sn -T4")
+        
         devices_found = 0
         all_hosts = nm.all_hosts()
         total_hosts = len(all_hosts)
         
+        logger.info(f"Nmap ping scan found {total_hosts} hosts")
+        
+        # RPi 5 optimization: Batch scan ALL hosts at once instead of individually
+        # This uses much less memory and is faster on ARM
+        batch_scan = nmap.PortScanner()
+        batch_scan_args = "-sV -T4 --open -p 21,22,23,25,53,80,443,554,1900,2323,4444,5555,8080,8888,9000"
+        try:
+            batch_scan.scan(hosts=network, arguments=batch_scan_args, timeout=120)
+            logger.info(f"Batch service scan completed for {network}")
+        except Exception as e:
+            logger.warning(f"Batch scan failed, falling back to individual scans: {e}")
+            batch_scan = None
+        
+        # Merge ARP and Nmap results
         for i, host in enumerate(all_hosts):
             if nm[host].state() != "up":
                 continue
-
-            # استخراج بيانات الجهاز
+            
+            # Get MAC and vendor from multiple sources
+            mac = "Unknown"
+            vendor = "Unknown"
+            
+            # Priority 1: From ARP scan results
+            if host in arp_devices:
+                mac = arp_devices[host]['mac']
+                vendor = arp_devices[host]['vendor']
+                logger.info(f"MAC from ARP scan: {host} - {mac} ({vendor})")
+            
+            # Priority 2: From system ARP cache
+            if mac == "Unknown":
+                arp_mac, arp_vendor = get_mac_from_arp_cache(host)
+                if arp_mac:
+                    mac = arp_mac
+                    vendor = arp_vendor or vendor
+                    logger.info(f"MAC from system ARP: {host} - {mac}")
+            
+            # Priority 3: From Nmap (if available)
+            if mac == "Unknown" and "addresses" in nm[host] and "mac" in nm[host]["addresses"]:
+                mac = nm[host]["addresses"].get("mac", "Unknown")
+                if mac != "Unknown" and "vendor" in nm[host]:
+                    vendor = nm[host]["vendor"].get(mac, "Unknown")
+                    logger.info(f"MAC from Nmap: {host} - {mac} ({vendor})")
+            
+            # Extract hostname
             hostname = nm[host].hostname() or "Unknown"
-            mac = nm[host]["addresses"].get("mac", "Unknown")
-            vendor = nm[host]["vendor"].get(mac, "Unknown") if mac != "Unknown" else "Unknown"
-
-            # المنافذ المفتوحة
+            
+            # Get service info from batch scan
             open_ports = []
-            for proto in nm[host].all_protocols():
-                for port in nm[host][proto].keys():
-                    if nm[host][proto][port]["state"] == "open":
-                        open_ports.append(port)
-
-            # os guess
             os_guess = "Unknown"
-            if "osmatch" in nm[host] and nm[host]["osmatch"]:
-                os_guess = nm[host]["osmatch"][0].get("name", "Unknown")
-
+            
+            # Try batch scan results first (faster, less memory)
+            if batch_scan and host in batch_scan.all_hosts():
+                for proto in batch_scan[host].all_protocols():
+                    for port in batch_scan[host][proto].keys():
+                        if batch_scan[host][proto][port]["state"] == "open":
+                            open_ports.append(port)
+                
+                # Try to get hostname from batch scan
+                if hostname == "Unknown" and len(batch_scan[host].hostname()) > 0:
+                    hostname = batch_scan[host].hostname()
+                
+                # OS detection from batch scan
+                if "osmatch" in batch_scan[host] and batch_scan[host]["osmatch"]:
+                    os_guess = batch_scan[host]["osmatch"][0].get("name", "Unknown")
+                    logger.info(f"OS detected for {host}: {os_guess}")
+            else:
+                # Fallback: individual scan only if batch missed this host
+                # Limit to avoid memory issues on RPi 5
+                try:
+                    nm_host = nmap.PortScanner()
+                    nm_host.scan(hosts=host, arguments="-sV -T4 --open -p 21,22,23,25,53,80,443,554,1900,2323,4444,5555,8080,8888,9000", timeout=60)
+                    if host in nm_host.all_hosts():
+                        if hostname == "Unknown" and len(nm_host[host].hostname()) > 0:
+                            hostname = nm_host[host].hostname()
+                        for proto in nm_host[host].all_protocols():
+                            for port in nm_host[host][proto].keys():
+                                if nm_host[host][proto][port]["state"] == "open":
+                                    open_ports.append(port)
+                        if "osmatch" in nm_host[host] and nm_host[host]["osmatch"]:
+                            os_guess = nm_host[host]["osmatch"][0].get("name", "Unknown")
+                except Exception as e:
+                    logger.warning(f"Individual scan failed for {host}: {e}")
+            
             # تقييم الأمان
             risk_result = calculate_risk(open_ports, "Wi-Fi")
 
-            # حفظ في قاعدة البيانات (أو تحديث إذا موجود)
+            # تحديث في قاعدة البيانات (أو إضافة إذا جديد)
             existing = db.query(Device).filter(Device.ip == host).first()
             if existing:
                 device = existing
                 device.last_seen = datetime.utcnow()
-                device.open_ports = ",".join(map(str, open_ports))
+                # Always update if we have better info
+                if mac != "Unknown" and mac:
+                    device.mac = mac
+                if vendor != "Unknown" and vendor:
+                    device.vendor = vendor
+                if hostname != "Unknown" and hostname:
+                    device.hostname = hostname
+                if os_guess != "Unknown" and os_guess:
+                    device.os_guess = os_guess
+                if open_ports:
+                    device.open_ports = ",".join(map(str, open_ports))
                 device.risk_level = risk_result["risk_level"]
                 device.risk_score = risk_result["risk_score"]
                 # حذف الثغرات القديمة وإعادة إضافتها
@@ -355,12 +629,12 @@ def run_nmap_scan(network: str, db: Session):
             else:
                 device = Device(
                     ip=host,
-                    mac=mac,
-                    hostname=hostname,
-                    vendor=vendor,
+                    mac=mac if mac else "Unknown",
+                    hostname=hostname if hostname else "Unknown",
+                    vendor=vendor if vendor else "Unknown",
                     protocol="Wi-Fi",
-                    os_guess=os_guess,
-                    open_ports=",".join(map(str, open_ports)),
+                    os_guess=os_guess if os_guess else "Unknown",
+                    open_ports=",".join(map(str, open_ports)) if open_ports else "",
                     risk_level=risk_result["risk_level"],
                     risk_score=risk_result["risk_score"],
                     last_seen=datetime.utcnow()
@@ -384,6 +658,9 @@ def run_nmap_scan(network: str, db: Session):
             devices_found += 1
             scan_state["devices_found"] = devices_found
             
+            logger.info(f"Discovered device {devices_found}: {host} ({mac})")
+            logger.debug(f"Broadcasting device_found event for {host}")
+            
             # Broadcast device found
             manager.broadcast({
                 "event": "device_found", 
@@ -391,12 +668,14 @@ def run_nmap_scan(network: str, db: Session):
                     "id": device.id,
                     "hostname": hostname,
                     "ip": host,
+                    "mac": mac,
+                    "vendor": vendor,
                     "risk_level": device.risk_level
                 }
             })
             
             # Update progress
-            progress = 20 + int((i + 1) / total_hosts * 70)
+            progress = 30 + int((i + 1) / total_hosts * 60)
             scan_state["progress"] = progress
             manager.broadcast({"event": "scan_progress", "progress": progress, "message": f"تم اكتشاف {devices_found} أجهزة..."})
 

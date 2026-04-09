@@ -7,6 +7,16 @@ import asyncio
 import os
 import logging
 
+# Load .env file if it exists
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+if os.path.exists(dotenv_path):
+    with open(dotenv_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                os.environ.setdefault(key.strip(), value.strip())
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,7 +32,6 @@ init_db()
 
 # ===================== AUTH =====================
 # SECURITY: In production, use environment variables or a secure vault
-import os
 VALID_USERNAME = os.getenv("PENTEX_USERNAME", "admin")
 VALID_PASSWORD = os.getenv("PENTEX_PASSWORD", "pentex2024")  # Change this!
 
@@ -99,3 +108,22 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.debug(f"WebSocket connection closed: {e}")
     finally:
         manager.disconnect(websocket)
+
+if __name__ == "__main__":
+    import uvicorn
+    # Disable reload in production to prevent disconnects
+    reload_mode = os.getenv("PENTEX_RELOAD", "false").lower() == "true"
+    
+    # RPi 5 optimization: use 1 worker to save RAM on 4GB model
+    workers = int(os.getenv("PENTEX_WORKERS", "1"))
+    
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0", 
+        port=8000, 
+        reload=reload_mode,
+        workers=workers if not reload_mode else 1,  # reload and workers are incompatible
+        log_level="info",
+        access_log=False,  # Reduce log noise
+        timeout_keep_alive=30  # Keep WebSocket connections alive
+    )

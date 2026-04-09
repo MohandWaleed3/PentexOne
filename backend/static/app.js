@@ -22,6 +22,34 @@ const app = {
         this.fetchHardwareStatus();
         this.fetchAISuggestions(); // AI suggestions on load
         this.fetchAISecurityScore(); // AI security score
+        
+        // Add auto-refresh every 5 seconds as backup
+        this.startAutoRefresh();
+        console.log('[Init] App initialized with auto-refresh enabled');
+    },
+    
+    startAutoRefresh() {
+        // Refresh devices and summary every 5 seconds
+        this.refreshInterval = setInterval(() => {
+            // Only refresh if no scan is currently running
+            this.fetchDevices();
+            this.fetchSummary();
+        }, 5000);
+        
+        console.log('[AutoRefresh] Started - will refresh every 5 seconds');
+    },
+    
+    toggleAdvanced() {
+        const advancedOptions = document.getElementById('advancedOptions');
+        const advancedIcon = document.getElementById('advancedIcon');
+        
+        if (advancedOptions.classList.contains('hidden')) {
+            advancedOptions.classList.remove('hidden');
+            advancedIcon.style.transform = 'rotate(180deg)';
+        } else {
+            advancedOptions.classList.add('hidden');
+            advancedIcon.style.transform = 'rotate(0deg)';
+        }
     },
 
     initCharts() {
@@ -113,10 +141,13 @@ const app = {
     },
 
     handleWebSocketMessage(data) {
+        console.log('[WebSocket] Received event:', data.event, data);
+        
         if (data.event === 'heartbeat') return;
         
         if (data.event === 'device_found') {
-            this.showToast(`New device discovered: ${data.device.hostname}`, 'info');
+            console.log('[Device Found] Updating UI with device:', data.device.ip);
+            this.showToast(`New device discovered: ${data.device.hostname || data.device.ip}`, 'info');
             this.fetchDevices();
             this.fetchSummary();
             this.fetchAISecurityScore();
@@ -124,8 +155,10 @@ const app = {
             this.showToast(`Vulnerability detected: ${data.vulnerability.vuln_type}`, 'risk');
             this.fetchDevices();
         } else if (data.event === 'scan_progress') {
+            console.log('[Scan Progress]', data.progress + '% -', data.message);
             this.updateScanProgress(data.progress, data.message);
         } else if (data.event === 'scan_finished') {
+            console.log('[Scan Finished] Count:', data.count);
             this.showToast(`Scan complete: Found ${data.count} devices.`, 'success');
             this.updateScanProgress(100, `Scan finished.`);
             setTimeout(() => {
@@ -319,28 +352,54 @@ const app = {
         try {
             const res = await fetch(`${API_BASE}/iot/devices`);
             if (res.ok) {
-                this.devices = await res.json();
-                this.renderDevicesTable();
-                this.updateProtocolChart();
+                const newDevices = await res.json();
+                const deviceCount = newDevices.length;
+                const oldCount = this.devices.length;
+                
+                // Only update if device count changed or first load
+                if (deviceCount !== oldCount || oldCount === 0) {
+                    console.log(`[Fetch] Devices changed: ${oldCount} → ${deviceCount}, updating UI`);
+                    this.devices = newDevices;
+                    this.renderDevicesTable();
+                    this.updateProtocolChart();
+                    
+                    // Show toast if new devices found
+                    if (deviceCount > oldCount) {
+                        this.showToast(`Found ${deviceCount - oldCount} new device(s)!`, 'success');
+                    }
+                } else {
+                    // Still update but less verbose
+                    if (this.devices.length === 0) {
+                        console.log('[Fetch] No devices found');
+                    }
+                }
+            } else {
+                console.error('[Fetch] Server returned error:', res.status);
             }
         } catch (e) {
-            console.error("Failed to fetch devices", e);
+            console.error("[Fetch] Failed to fetch devices:", e);
         }
     },
 
     renderDevicesTable() {
         const tbody = document.getElementById("devicesTableBody");
-        if(!tbody) return;
+        if(!tbody) {
+            console.error('[Render] devicesTableBody not found in HTML!');
+            return;
+        }
+        
+        console.log(`[Render] Rendering ${this.devices.length} devices to table`);
         tbody.innerHTML = "";
 
         if (this.devices.length === 0) {
+            console.log('[Render] No devices to show, showing empty state');
             const tr = document.createElement("tr");
             tr.innerHTML = `<td colspan="4" style="text-align:center; color:var(--text-muted)">No devices discovered yet.</td>`;
             tbody.appendChild(tr);
             return;
         }
 
-        this.devices.forEach(device => {
+        this.devices.forEach((device, index) => {
             const tr = document.createElement("tr");
             tr.className = "device-row";
             if (this.selectedDevice && this.selectedDevice.id === device.id) {
@@ -356,12 +415,18 @@ const app = {
 
             tr.innerHTML = `
                 <td><i class="fa-solid ${icon}"></i> ${device.protocol}</td>
-                <td><div style="font-family:monospace">${device.ip}</div><div style="font-size:11px; color:var(--text-muted)">${device.mac}</div></td>
-                <td><div>${device.hostname}</div><div style="font-size:11px; color:var(--text-muted)">${device.vendor}</div></td>
+                <td><div style="font-family:monospace">${device.ip}</div><div style="font-size:11px; color:var(--text-muted)">${device.mac || 'N/A'}</div></td>
+                <td><div>${device.hostname || 'Unknown'}</div><div style="font-size:11px; color:var(--text-muted)">${device.vendor || 'Unknown'}</div></td>
                 <td><span class="badge ${device.risk_level.toLowerCase()}">${device.risk_level}</span></td>
             `;
             tbody.appendChild(tr);
+            
+            if (index === 0) {
+                console.log('[Render] First device:', device.ip, device.mac, device.hostname);
+            }
         });
+        
+        console.log(`[Render] Successfully rendered ${this.devices.length} devices`);
     },
 
     selectDevice(id) {
@@ -620,22 +685,28 @@ const app = {
             const res = await fetch(`${API_BASE}/iot/scan/status`);
             const data = await res.json();
             
+            console.log('[Polling] Status:', data);
             document.getElementById("scanStatusText").textContent = data.message;
             if (data.progress > 0) {
                 document.getElementById("scanProgressBar").style.width = `${data.progress}%`;
             }
 
             if (!data.running) {
+                console.log('[Polling] Scan complete, refreshing in 3 seconds...');
                 clearInterval(this.scanInterval);
                 document.getElementById("scanProgressBar").style.width = `100%`;
+                // Don't refresh here - WebSocket scan_finished will handle it
+                // This prevents double-refresh
                 setTimeout(() => {
                     document.getElementById("scanProgressContainer").classList.add("hidden");
+                    // Only refresh if WebSocket didn't already do it
+                    console.log('[Polling] Manual refresh triggered');
                     this.fetchDevices();
                     this.fetchSummary();
                 }, 3000);
             }
         } catch (e) {
-            console.error("Polling error", e);
+            console.error("[Polling] Error:", e);
         }
     },
 

@@ -51,64 +51,70 @@
 
             <!-- ================= VIEW: DASHBOARD ================= -->
             <div id="view-dashboard" class="view-section">
-                <!-- Scanning Controls -->
-                <section class="scan-controls glass-panel" style="margin-bottom: 20px;">
-                    <div class="control-group">
-                        <h3><i class="fa-solid fa-wifi text-blue"></i> Wi-Fi & IP Network</h3>
-                        <div class="network-discovery">
+                <!-- Quick Action Bar -->
+                <section class="quick-actions glass-panel" style="margin-bottom: 20px;">
+                    <div class="quick-actions-header">
+                        <h3><i class="fa-solid fa-bolt"></i> Quick Scan</h3>
+                        <div class="quick-action-buttons">
+                            <button class="btn btn-primary" onclick="app.startScan('wifi')" title="Scan Wi-Fi Network">
+                                <i class="fa-solid fa-wifi"></i> Wi-Fi Scan
+                            </button>
+                            <button class="btn btn-outline-blue" onclick="app.startScan('bluetooth')" title="Scan Bluetooth Devices">
+                                <i class="fa-brands fa-bluetooth-b"></i> Bluetooth
+                            </button>
+                            <button class="btn btn-outline-orange" onclick="app.startScan('zigbee')" title="Sniff Zigbee Traffic">
+                                <i class="fa-solid fa-circle-nodes"></i> Zigbee
+                            </button>
+                            <button class="btn btn-outline-purple" onclick="app.startScan('thread')" title="Discover Thread/Matter">
+                                <i class="fa-solid fa-diagram-project"></i> Thread
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Advanced Options (Collapsible) -->
+                    <div class="advanced-toggle">
+                        <button class="btn btn-text" onclick="app.toggleAdvanced()">
+                            <i class="fa-solid fa-sliders"></i> Advanced Options <i class="fa-solid fa-chevron-down" id="advancedIcon"></i>
+                        </button>
+                    </div>
+                    
+                    <div id="advancedOptions" class="advanced-options hidden">
+                        <div class="network-config">
                             <div class="input-action">
                                 <select id="networkSelect" class="network-select">
-                                    <option value="">Discover networks...</option>
+                                    <option value="">Discovering networks...</option>
                                 </select>
                                 <button class="btn btn-outline-blue" onclick="app.discoverNetworks()">
-                                    <i class="fa-solid fa-search"></i> Discover
+                                    <i class="fa-solid fa-magnifying-glass"></i> Discover
                                 </button>
                             </div>
                             <div class="input-action" style="margin-top: 10px;">
-                                <input type="text" id="networkInput" value="192.168.1.0/24"
-                                    placeholder="Or enter network manually">
-                                <button class="btn btn-outline-blue" onclick="app.startScan('wifi')">Scan IP</button>
+                                <input type="text" id="networkInput" value="192.168.1.0/24" placeholder="Or enter network range">
+                                <button class="btn btn-outline-blue" onclick="app.startScan('wifi')">Scan Network</button>
                             </div>
                         </div>
-
-                        <!-- قسم الشبكات المحيطة (SSIDs) -->
-                        <div id="nearbySsidsContainer" class="nearby-ssids-list hidden"
-                            style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
-                            <h4 style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Nearby Airwaves
-                                (SSIDs):</h4>
-                            <div id="ssidsList"
-                                style="max-height: 150px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;">
-                                <!-- سيتم ملؤه بواسطة JS -->
+                        
+                        <!-- Additional Protocols -->
+                        <div class="additional-protocols">
+                            <h4 style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">Additional Protocols:</h4>
+                            <div class="protocol-buttons">
+                                <button class="btn btn-outline-pink" onclick="app.startScan('zwave')">
+                                    <i class="fa-solid fa-tower-broadcast"></i> Z-Wave
+                                </button>
+                                <button class="btn btn-outline-teal" onclick="app.startScan('lora')">
+                                    <i class="fa-solid fa-satellite-dish"></i> LoRaWAN
+                                </button>
+                                <button class="btn btn-outline-purple" onclick="app.startScan('matter')">
+                                    <i class="fa-solid fa-house-signal"></i> Matter
+                                </button>
                             </div>
                         </div>
-                    </div>
-
-                    <div class="control-group">
-                        <h3><i class="fa-brands fa-bluetooth text-blue"></i> Bluetooth (BLE)</h3>
-                        <button class="btn btn-outline-blue full-width" onclick="app.startScan('bluetooth')">Scan BLE
-                            Devices</button>
-                    </div>
-
-                    <div class="control-group">
-                        <h3><i class="fa-brands fa-zigbee text-orange"></i> Zigbee Protocol</h3>
-                        <button class="btn btn-outline-orange full-width" onclick="app.startScan('zigbee')">Sniff
-                            Zigbee</button>
-                    </div>
-
-                    <div class="control-group">
-                        <h3><i class="fa-solid fa-hubspot text-purple"></i> Thread/Matter</h3>
-                        <button class="btn btn-outline-purple full-width" onclick="app.startScan('thread')">Discover Thread</button>
-                        <button class="btn btn-outline-purple full-width" style="margin-top: 5px;" onclick="app.startScan('matter')">Discover Matter</button>
-                    </div>
-                    
-                    <div class="control-group">
-                        <h3><i class="fa-solid fa-broadcast-tower text-pink"></i> Z-Wave</h3>
-                        <button class="btn btn-outline-pink full-width" onclick="app.startScan('zwave')">Scan Z-Wave</button>
-                    </div>
-                    
-                    <div class="control-group">
-                        <h3><i class="fa-solid fa-tower-broadcast text-teal"></i> LoRaWAN</h3>
-                        <button class="btn btn-outline-teal full-width" onclick="app.startScan('lora')">Scan LoRa</button>
+                        
+                        <!-- Nearby SSIDs -->
+                        <div id="nearbySsidsContainer" class="nearby-ssids-list hidden" style="margin-top: 15px;">
+                            <h4 style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Nearby Wi-Fi Networks:</h4>
+                            <div id="ssidsList" class="ssids-scroll"></div>
+                        </div>
                     </div>
                 </section>
 
@@ -156,66 +162,64 @@
                 </section>
 
                 <!-- Charts Row -->
-                <div style="display: flex; gap: 20px; margin-bottom: 24px; flex-wrap: wrap;">
+                <div class="charts-row">
                     <!-- Risk Distribution Chart -->
-                    <div class="glass-panel" style="flex: 1; min-width: 300px; padding: 20px;">
-                        <h3 style="margin-bottom: 15px; color: var(--text-primary); font-size: 14px;">Risk Distribution</h3>
-                        <div style="width: 100%; height: 180px; display: flex; align-items: center; justify-content: center;">
-                            <div style="width: 150px; height: 150px;">
-                                <canvas id="riskPieChart"></canvas>
-                            </div>
+                    <div class="glass-panel chart-panel">
+                        <h3 class="chart-title"><i class="fa-solid fa-chart-pie"></i> Risk Distribution</h3>
+                        <div class="chart-container">
+                            <canvas id="riskPieChart"></canvas>
                         </div>
-                        <div style="display: flex; justify-content: center; gap: 15px; margin-top: 10px;">
-                            <span style="font-size: 11px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-right:4px;"></span>Safe</span>
-                            <span style="font-size: 11px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;margin-right:4px;"></span>Medium</span>
-                            <span style="font-size: 11px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444;margin-right:4px;"></span>Risk</span>
+                        <div class="chart-legend">
+                            <span class="legend-item"><span class="legend-dot safe"></span>Safe</span>
+                            <span class="legend-item"><span class="legend-dot medium"></span>Medium</span>
+                            <span class="legend-item"><span class="legend-dot risk"></span>Risk</span>
                         </div>
                     </div>
                     
                     <!-- Protocol Distribution Chart -->
-                    <div class="glass-panel" style="flex: 2; min-width: 400px; padding: 20px;">
-                        <h3 style="margin-bottom: 15px; color: var(--text-primary); font-size: 14px;">Protocol Distribution</h3>
-                        <div style="height: 180px;">
+                    <div class="glass-panel chart-panel wide">
+                        <h3 class="chart-title"><i class="fa-solid fa-chart-bar"></i> Protocol Distribution</h3>
+                        <div class="chart-container tall">
                             <canvas id="protocolChart"></canvas>
                         </div>
                     </div>
                 </div>
                 
                 <!-- Hardware Status -->
-                <div class="glass-panel" style="margin-bottom: 24px; padding: 15px 20px;">
-                    <h3 style="margin-bottom: 10px; color: var(--text-primary); font-size: 14px;">
-                        <i class="fa-solid fa-microchip" style="margin-right: 8px;"></i>Hardware Status
+                <div class="glass-panel hardware-panel">
+                    <h3 class="section-header">
+                        <i class="fa-solid fa-microchip"></i>Hardware Status
                     </h3>
-                    <div id="hardwareStatus">
-                        <span style="color: var(--text-muted); font-size: 12px;">Detecting hardware...</span>
+                    <div id="hardwareStatus" class="hardware-grid">
+                        <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Detecting hardware...</span>
                     </div>
                 </div>
                 
                 <!-- AI Security Score & Suggestions -->
-                <div style="display: flex; gap: 20px; margin-bottom: 24px; flex-wrap: wrap;">
+                <div class="ai-section">
                     <!-- AI Security Score -->
-                    <div class="glass-panel" style="flex: 1; min-width: 280px; padding: 20px;">
-                        <h3 style="margin-bottom: 15px; color: var(--text-primary); font-size: 14px;">
-                            <i class="fa-solid fa-brain" style="margin-right: 8px; color: var(--accent-purple);"></i>AI Security Score
+                    <div class="glass-panel score-panel">
+                        <h3 class="section-header">
+                            <i class="fa-solid fa-brain" style="color: var(--accent-purple);"></i>AI Security Score
                         </h3>
-                        <div id="aiSecurityScore" style="text-align: center;">
-                            <div id="securityScoreCircle" style="width: 120px; height: 120px; border-radius: 50%; background: conic-gradient(#22c55e 0% 100%); margin: 0 auto; display: flex; align-items: center; justify-content: center;">
-                                <div style="width: 90px; height: 90px; border-radius: 50%; background: var(--bg-main); display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                                    <span id="scoreValue" style="font-size: 28px; font-weight: 700;">--</span>
-                                    <span id="scoreGrade" style="font-size: 14px; font-weight: 500;">-</span>
+                        <div id="aiSecurityScore" class="score-display">
+                            <div id="securityScoreCircle" class="score-circle">
+                                <div class="score-inner">
+                                    <span id="scoreValue" class="score-number">--</span>
+                                    <span id="scoreGrade" class="score-grade">-</span>
                                 </div>
                             </div>
-                            <p id="scoreDescription" style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">Analyzing network...</p>
+                            <p id="scoreDescription" class="score-desc">Analyzing network...</p>
                         </div>
                     </div>
                     
                     <!-- AI Suggestions -->
-                    <div class="glass-panel" style="flex: 2; min-width: 400px; padding: 20px;">
-                        <h3 style="margin-bottom: 15px; color: var(--text-primary); font-size: 14px;">
-                            <i class="fa-solid fa-lightbulb" style="margin-right: 8px; color: var(--status-medium);"></i>AI Recommendations
+                    <div class="glass-panel suggestions-panel">
+                        <h3 class="section-header">
+                            <i class="fa-solid fa-lightbulb" style="color: var(--status-medium);"></i>AI Recommendations
                         </h3>
-                        <div id="aiSuggestions" style="display: flex; flex-direction: column; gap: 10px;">
-                            <div style="color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px;">
+                        <div id="aiSuggestions" class="suggestions-list">
+                            <div class="loading-suggestions">
                                 <i class="fa-solid fa-spinner fa-spin"></i> Loading AI analysis...
                             </div>
                         </div>

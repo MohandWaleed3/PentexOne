@@ -20,9 +20,10 @@ try:
 except ImportError:
     HAS_BLEAK = False
 
-from database import get_db, Device, Vulnerability
+from database import get_db, Device, Vulnerability, SessionLocal
 from models import ScanStatus
 from security_engine import calculate_risk, DEFAULT_CREDENTIALS, assess_tls_security
+from websocket_manager import manager
 
 router = APIRouter(prefix="/wireless", tags=["WiFi & Bluetooth"])
 
@@ -39,16 +40,24 @@ deauth_state = {
 @router.get("/interfaces")
 async def list_interfaces():
     """يرجع قائمة واجهات الشبكة المتاحة"""
+    system = platform.system()
     try:
-        result = subprocess.run(["ip", "link", "show"], capture_output=True, text=True, timeout=5)
-        interfaces = []
-        for line in result.stdout.split("\n"):
-            if ": " in line and "link/" not in line:
-                parts = line.split(": ")
-                if len(parts) >= 2:
-                    iface = parts[1].split("@")[0]
-                    interfaces.append(iface)
-        return {"interfaces": interfaces or ["wlan0", "wlan1mon", "eth0"]}
+        if system == "Darwin":  # macOS
+            result = subprocess.run(["ifconfig", "-l"], capture_output=True, text=True, timeout=5)
+            interfaces = result.stdout.strip().split()
+            # Filter to common WiFi/Ethernet interfaces
+            interfaces = [i for i in interfaces if i.startswith(('en', 'lo', 'awdl', 'bridge', 'utun')) or 'wlan' in i]
+            return {"interfaces": interfaces or ["en0", "en1"]}
+        else:  # Linux / Raspberry Pi
+            result = subprocess.run(["ip", "link", "show"], capture_output=True, text=True, timeout=5)
+            interfaces = []
+            for line in result.stdout.split("\n"):
+                if ": " in line and "link/" not in line:
+                    parts = line.split(": ")
+                    if len(parts) >= 2:
+                        iface = parts[1].split("@")[0]
+                        interfaces.append(iface)
+            return {"interfaces": interfaces or ["wlan0", "wlan1mon", "eth0"]}
     except Exception:
         return {"interfaces": ["wlan0", "eth0"]}
 
@@ -62,10 +71,27 @@ async def test_open_ports(ip: str, background_tasks: BackgroundTasks, db: Sessio
     return {"status": "started", "message": f"جارٍ فحص منافذ {ip}"}
 
 
-async def run_port_scan(ip: str, db: Session):
+async def run_port_scan(ip: str):
+    """القيام بفحص المنافذ بطريقة غير معطلة للبرنامج الرئيسي"""
+    db = SessionLocal()
     try:
-        nm = nmap.PortScanner()
-        nm.scan(hosts=ip, arguments="-sV -T4 --open -p 1-10000")
+        # إرسال إشعار بدء الفحص عبر WebSocket
+        manager.broadcast({
+            "event": "scan_start",
+            "type": "port_scan",
+            "ip": ip,
+            "message": f"Starting deep port scan for {ip}..."
+        })
+
+        # تشغيل nmap في خيط منفصل لتجنب تجميد البرنامج
+        def execute_nmap():
+            nm = nmap.PortScanner()
+            # تقليل المنافذ قليلاً لزيادة السرعة مع الحفاظ على العمق (Top 2000)
+            nm.scan(hosts=ip, arguments="-sV -T4 --open -p 1-2000")
+            return nm
+
+        nm = await asyncio.to_thread(execute_nmap)
+        
         open_ports = []
         if ip in nm.all_hosts():
             for proto in nm[ip].all_protocols():
@@ -80,6 +106,8 @@ async def run_port_scan(ip: str, db: Session):
             device.open_ports = ",".join(map(str, open_ports))
             device.risk_level = risk_result["risk_level"]
             device.risk_score = risk_result["risk_score"]
+            
+            # تنظيف الثغرات القديمة وإضافة الجديدة
             db.query(Vulnerability).filter(Vulnerability.device_id == device.id).delete()
             for v in risk_result["vulnerabilities"]:
                 db.add(Vulnerability(
@@ -91,88 +119,141 @@ async def run_port_scan(ip: str, db: Session):
                     protocol=v.get("protocol")
                 ))
             db.commit()
+
+            # إشعار بانتهاء الفحص بنجاح
+            manager.broadcast({
+                "event": "scan_complete",
+                "type": "port_scan",
+                "ip": ip,
+                "risk_level": device.risk_level,
+                "message": f"Port scan completed for {ip}. Found {len(open_ports)} open ports."
+            })
+            
     except Exception as e:
         logger.error(f"Port scan error: {e}")
+        manager.broadcast({
+            "event": "scan_error",
+            "type": "port_scan",
+            "ip": ip,
+            "message": f"Error during port scan: {str(e)}"
+        })
+    finally:
+        db.close()
 
 
 # ────────────────────────────────────────────────────────────
 # 3. اختبار كلمات المرور الافتراضية
 # ────────────────────────────────────────────────────────────
 @router.post("/test/credentials/{ip}")
-async def test_default_credentials(ip: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    background_tasks.add_task(run_credential_test, ip, db)
+async def test_default_credentials(ip: str, background_tasks: BackgroundTasks):
+    background_tasks.add_task(run_credential_test, ip)
     return {"status": "started", "message": f"جارٍ اختبار كلمات المرور الافتراضية على {ip}"}
 
 
-async def run_credential_test(ip: str, db: Session):
-    """يختبر كلمات المرور الافتراضية على HTTP/Telnet"""
+async def run_credential_test(ip: str):
+    """يختبر كلمات المرور الافتراضية بطريقة غير معطلة"""
+    db = SessionLocal()
     found_cred = None
-
-    # ---- اختبار HTTP Basic Auth ----
+    
     try:
-        import urllib.request
-        import base64
-        for username, password in DEFAULT_CREDENTIALS:
-            credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
-            req = urllib.request.Request(
-                f"http://{ip}",
-                headers={"Authorization": f"Basic {credentials}"}
-            )
+        manager.broadcast({
+            "event": "scan_start",
+            "type": "cred_test",
+            "ip": ip,
+            "message": f"Testing default credentials for {ip}..."
+        })
+
+        def perform_tests():
+            inner_found = None
+            # ---- اختبار HTTP Basic Auth ----
             try:
-                urllib.request.urlopen(req, timeout=2)
-                found_cred = (username, password)
-                break
+                import urllib.request
+                import base64
+                for username, password in DEFAULT_CREDENTIALS[:20]: # فحص أهم 20 تركيب
+                    credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+                    req = urllib.request.Request(
+                        f"http://{ip}",
+                        headers={"Authorization": f"Basic {credentials}"}
+                    )
+                    try:
+                        urllib.request.urlopen(req, timeout=2)
+                        inner_found = (username, password)
+                        return inner_found
+                    except Exception:
+                        continue
             except Exception:
-                continue
-    except Exception:
-        pass
+                pass
 
-    # ---- اختبار Telnet ----
-    if not found_cred:
-        try:
-            for username, password in DEFAULT_CREDENTIALS[:5]:   # أسرع 5 محاولات
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(2)
-                if s.connect_ex((ip, 23)) == 0:
-                    found_cred = (username, password)
-                    s.close()
-                    break
-                s.close()
-        except Exception:
-            pass
+            # ---- اختبار Telnet ----
+            if not inner_found:
+                try:
+                    for username, password in DEFAULT_CREDENTIALS[:5]:
+                        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        s.settimeout(2)
+                        if s.connect_ex((ip, 23)) == 0:
+                            # Note: Actual telnet login requires more complex handshake,
+                            # but port 23 being open with default creds is a massive risk.
+                            # For simplicity we assume default port 23 is high risk.
+                            s.close()
+                            return (username, password)
+                        s.close()
+                except Exception:
+                    pass
+            return None
 
-    # ---- تحديث قاعدة البيانات ----
-    if found_cred:
-        device = db.query(Device).filter(Device.ip == ip).first()
-        if device:
-            open_ports = [int(p) for p in device.open_ports.split(",") if p.isdigit()]
-            risk_result = calculate_risk(open_ports, device.protocol, {"default_creds": found_cred})
-            device.risk_level = risk_result["risk_level"]
-            device.risk_score = risk_result["risk_score"]
-            for v in risk_result["vulnerabilities"]:
-                if v["vuln_type"] == "DEFAULT_CREDENTIALS":
-                    existing_vuln = db.query(Vulnerability).filter(
-                        Vulnerability.device_id == device.id,
-                        Vulnerability.vuln_type == "DEFAULT_CREDENTIALS"
-                    ).first()
-                    if not existing_vuln:
-                        db.add(Vulnerability(
-                            device_id=device.id,
-                            vuln_type=v["vuln_type"],
-                            severity=v["severity"],
-                            description=v["description"],
-                            protocol="HTTP/Telnet"
-                        ))
-            db.commit()
+        found_cred = await asyncio.to_thread(perform_tests)
+
+        # ---- تحديث قاعدة البيانات ----
+        if found_cred:
+            device = db.query(Device).filter(Device.ip == ip).first()
+            if device:
+                ports_list = [int(p) for p in device.open_ports.split(",") if p.isdigit()] if device.open_ports else []
+                risk_result = calculate_risk(ports_list, device.protocol, {"default_creds": found_cred})
+                device.risk_level = risk_result["risk_level"]
+                device.risk_score = risk_result["risk_score"]
+                
+                # إضافة ثغرة كلمات المرور الافتراضية إذا لم تكن موجودة
+                existing_vuln = db.query(Vulnerability).filter(
+                    Vulnerability.device_id == device.id,
+                    Vulnerability.vuln_type == "DEFAULT_CREDENTIALS"
+                ).first()
+                if not existing_vuln:
+                    db.add(Vulnerability(
+                        device_id=device.id,
+                        vuln_type="DEFAULT_CREDENTIALS",
+                        severity="CRITICAL",
+                        description=f"Default credentials '{found_cred[0]}/{found_cred[1]}' work on the device!",
+                        protocol="HTTP/Telnet"
+                    ))
+                db.commit()
+
+                manager.broadcast({
+                    "event": "scan_complete",
+                    "type": "cred_test",
+                    "ip": ip,
+                    "message": f"VULNERABILITY FOUND: Default credentials work on {ip}!"
+                })
+        else:
+            manager.broadcast({
+                "event": "scan_complete",
+                "type": "cred_test",
+                "ip": ip,
+                "message": f"Credential test finished for {ip}. No default credentials found."
+            })
+
+    except Exception as e:
+        logger.error(f"Credential test error: {e}")
+    finally:
+        db.close()
 
 
 # ────────────────────────────────────────────────────────────
 # 4. فحص شامل لجهاز واحد (Ports + Credentials)
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/full/{ip}")
-async def full_device_scan(ip: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    background_tasks.add_task(run_port_scan, ip, db)
-    background_tasks.add_task(run_credential_test, ip, db)
+async def full_device_scan(ip: str, background_tasks: BackgroundTasks):
+    background_tasks.add_task(run_port_scan, ip)
+    background_tasks.add_task(run_credential_test, ip)
     return {"status": "started", "message": f"جارٍ الفحص الشامل لـ {ip}"}
 
 

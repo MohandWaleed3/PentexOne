@@ -1,0 +1,30 @@
+[Unit]
+Description=PentexOne IoT Security Auditor
+After=network.target bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/PentexOne/backend
+Environment=PATH=/home/pi/PentexOne/backend/venv/bin
+Environment=PENTEX_RELOAD=false
+Environment=PENTEX_WORKERS=1
+ExecStart=/home/pi/PentexOne/backend/venv/bin/python3 main.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pentexone
+
+# RPi 5 Optimizations
+# Limit memory to prevent OOM on 4GB model
+LimitNOFILE=65535
+
+# Security enhancements
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/pi/PentexOne/backend
+
+[Install]
+WantedBy=multi-user.target
