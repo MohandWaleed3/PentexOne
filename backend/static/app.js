@@ -29,14 +29,17 @@ const app = {
     },
     
     startAutoRefresh() {
-        // Refresh devices and summary every 5 seconds
+        // Refresh devices and summary every 5 seconds (10s if lightweight)
+        const isLightweight = document.body.classList.contains('lightweight-mode');
+        const interval = isLightweight ? 10000 : 5000;
+        
         this.refreshInterval = setInterval(() => {
             // Only refresh if no scan is currently running
             this.fetchDevices();
             this.fetchSummary();
-        }, 5000);
+        }, interval);
         
-        console.log('[AutoRefresh] Started - will refresh every 5 seconds');
+        console.log(`[AutoRefresh] Started - will refresh every ${interval/1000} seconds`);
     },
     
     toggleAdvanced() {
@@ -53,11 +56,12 @@ const app = {
     },
 
     initCharts() {
-        this.initRiskChart();
-        this.initProtocolChart();
+        const isLightweight = document.body.classList.contains('lightweight-mode');
+        this.initRiskChart(isLightweight);
+        this.initProtocolChart(isLightweight);
     },
 
-    initRiskChart() {
+    initRiskChart(isLightweight) {
         const ctx = document.getElementById('riskPieChart');
         if (!ctx) return;
         this.riskChart = new Chart(ctx.getContext('2d'), {
@@ -68,7 +72,7 @@ const app = {
                     data: [0, 0, 0],
                     backgroundColor: ['#22c55e', '#f59e0b', '#ef4444'],
                     borderWidth: 0,
-                    hoverOffset: 4
+                    hoverOffset: isLightweight ? 0 : 4
                 }]
             },
             options: {
@@ -77,12 +81,13 @@ const app = {
                     legend: { display: false }
                 },
                 responsive: true,
-                maintainAspectRatio: false
+                maintainAspectRatio: false,
+                animation: isLightweight ? false : { duration: 800 }
             }
         });
     },
 
-    initProtocolChart() {
+    initProtocolChart(isLightweight) {
         const ctx = document.getElementById('protocolChart');
         if (!ctx) return;
         this.protocolChart = new Chart(ctx.getContext('2d'), {
@@ -107,6 +112,7 @@ const app = {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: isLightweight ? false : { duration: 800 },
                 plugins: {
                     legend: { display: false }
                 },

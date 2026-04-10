@@ -17,6 +17,14 @@
 - [README.md](file://backend/README.md)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Enhanced AI Analysis Router with comprehensive device classification and risk prediction capabilities
+- Improved WebSocket Manager with thread-safe broadcasting and better connection lifecycle management
+- Expanded Security Engine with protocol-specific vulnerability detection and remediation guidance
+- Added advanced pattern recognition and anomaly detection in AI analysis
+- Enhanced real-time communication architecture with improved error handling
+
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
@@ -32,8 +40,10 @@
 ## Introduction
 This document describes the backend architecture of PentexOne, a FastAPI-based IoT security auditing platform. It covers the application initialization, middleware configuration, modular router architecture, dependency injection, authentication and session management, routing patterns, WebSocket integration, settings management, and security considerations. The system integrates hardware scanning capabilities for Wi-Fi, Bluetooth, Zigbee, Thread/Matter, Z-Wave, LoRaWAN, and RFID/NFC, with AI-powered analysis and real-time dashboards.
 
+**Updated** Enhanced with major backend improvements including advanced AI analysis capabilities, improved WebSocket management, and enhanced security engine integration.
+
 ## Project Structure
-The backend follows a modular FastAPI structure with dedicated routers for each functional area, a central database module, a WebSocket manager, and shared models and engines for security and AI analysis.
+The backend follows a modular FastAPI structure with dedicated routers for each functional area, a central database module, an enhanced WebSocket manager, and shared models and engines for security and AI analysis.
 
 ```mermaid
 graph TB
@@ -95,10 +105,12 @@ A --> H
 ## Core Components
 - FastAPI Application: Central entry point with CORS, static file mounting, authentication, settings endpoints, and WebSocket endpoint.
 - Database Layer: SQLAlchemy ORM with SQLite, including models for devices, vulnerabilities, RFID cards, and settings.
-- Security Engine: Risk calculation and vulnerability assessment across protocols.
-- AI Engine: Pattern-based AI analysis, anomaly detection, and remediation recommendations.
-- WebSocket Manager: Connection lifecycle management and broadcast to clients.
+- Security Engine: Comprehensive risk calculation and vulnerability assessment across protocols with detailed remediation guidance.
+- AI Engine: Advanced pattern-based AI analysis, anomaly detection, network-wide analysis, and remediation recommendations.
+- WebSocket Manager: Enhanced connection lifecycle management with thread-safe broadcasting and improved error handling.
 - Modular Routers: Feature-specific endpoints for IoT scanning, Wi-Fi/Bluetooth, access control, reporting, and AI analysis.
+
+**Updated** Enhanced AI engine now includes comprehensive pattern recognition, anomaly detection, network analysis, and predictive risk assessment capabilities.
 
 **Section sources**
 - [main.py:34-106](file://backend/main.py#L34-L106)
@@ -108,7 +120,7 @@ A --> H
 - [websocket_manager.py:7-48](file://backend/websocket_manager.py#L7-L48)
 
 ## Architecture Overview
-The system initializes the database, mounts static assets, registers routers, sets up CORS, and exposes endpoints for authentication, settings, device management, and real-time updates via WebSocket. Background tasks coordinate hardware scans and asynchronous operations, while dependency injection ensures consistent database sessions.
+The system initializes the database, mounts static assets, registers routers, sets up CORS, and exposes endpoints for authentication, settings, device management, and real-time updates via WebSocket. Background tasks coordinate hardware scans and asynchronous operations, while dependency injection ensures consistent database sessions. The enhanced AI analysis provides comprehensive security insights and recommendations.
 
 ```mermaid
 sequenceDiagram
@@ -142,6 +154,9 @@ Sec-->>DB : Risk result
 DB-->>API : Commit devices/vulnerabilities
 API->>WS : Broadcast scan progress/events
 WS-->>Client : Real-time updates
+Client->>API : GET /ai/analyze/network
+API->>AI : analyze_network(devices)
+AI-->>Client : Comprehensive security analysis
 ```
 
 **Diagram sources**
@@ -151,6 +166,7 @@ WS-->>Client : Real-time updates
 - [routers/iot.py:291-413](file://backend/routers/iot.py#L291-L413)
 - [websocket_manager.py:11-45](file://backend/websocket_manager.py#L11-L45)
 - [security_engine.py:202-340](file://backend/security_engine.py#L202-L340)
+- [ai_engine.py:464-513](file://backend/ai_engine.py#L464-L513)
 
 ## Detailed Component Analysis
 
@@ -159,7 +175,7 @@ WS-->>Client : Real-time updates
 - Static Files: Mounted under /dashboard to serve the frontend.
 - Authentication: Username/password validation with environment-controlled credentials.
 - Settings: CRUD endpoints for simulation mode and nmap timeout.
-- WebSocket: Heartbeat endpoint with connection management.
+- WebSocket: Enhanced heartbeat endpoint with improved connection management.
 
 ```mermaid
 flowchart TD
@@ -442,6 +458,9 @@ Reports-->>Client : FileResponse
 - Single device analysis with pattern matching and predicted vulnerabilities.
 - Network-wide analysis and security score calculation.
 - Dashboard suggestions and remediation retrieval.
+- Device classification and risk prediction capabilities.
+
+**Updated** Enhanced with comprehensive device classification, risk prediction, and advanced pattern recognition.
 
 ```mermaid
 flowchart TD
@@ -455,6 +474,10 @@ Start --> Remediation["GET /ai/remediations"]
 Remediation --> RemDB["REMEDIATION_DATABASE"]
 Start --> Score["GET /ai/security-score"]
 Score --> CalcScore["Calculate weighted score"]
+Start --> Classify["GET /ai/classify/devices"]
+Classify --> DeviceType["Classify devices by type"]
+Start --> Predict["GET /ai/predict/risks"]
+Predict --> FutureRisk["Predict future risks"]
 ```
 
 **Diagram sources**
@@ -474,9 +497,11 @@ Score --> CalcScore["Calculate weighted score"]
 - [ai_engine.py:236-766](file://backend/ai_engine.py#L236-L766)
 
 ### WebSocket Manager and Real-Time Communication
-- Connection lifecycle: accept, track, broadcast, disconnect.
-- Thread-safe broadcasting from background tasks.
-- Heartbeat mechanism to keep connections alive.
+- Enhanced connection lifecycle: accept, track, broadcast, disconnect with improved error handling.
+- Thread-safe broadcasting from background tasks with fallback mechanisms.
+- Heartbeat mechanism to keep connections alive with logging and debugging support.
+
+**Updated** Improved with better thread safety, connection lifecycle management, and enhanced error handling.
 
 ```mermaid
 sequenceDiagram
@@ -572,30 +597,38 @@ App --> Crypto["cryptography"]
 ## Performance Considerations
 - Background tasks offload heavy scanning to prevent blocking requests.
 - SQLite is lightweight but may require optimization for large datasets.
-- Broadcasting to many WebSocket clients can be resource-intensive; consider rate limiting.
+- Enhanced WebSocket broadcasting with thread-safe mechanisms can handle multiple clients efficiently.
 - Hardware scanning depends on external tools and dongles; ensure adequate permissions and timeouts.
+- AI analysis provides comprehensive insights but may require computational resources for large networks.
 
-[No sources needed since this section provides general guidance]
+**Updated** Enhanced performance considerations for AI analysis and improved WebSocket management.
 
 ## Troubleshooting Guide
 Common issues and resolutions:
 - Cannot access dashboard: verify service status, logs, and port binding.
 - USB dongle not detected: check permissions and reboot after adding user to dialout group.
 - Bluetooth not working: restart Bluetooth service and unblock devices.
+- AI analysis slow: ensure sufficient system resources and consider optimizing database queries.
+- WebSocket connection issues: check event loop availability and connection limits.
+
+**Updated** Added troubleshooting guidance for AI analysis and WebSocket management.
 
 **Section sources**
 - [README.md:353-381](file://backend/README.md#L353-L381)
 
 ## Conclusion
-PentexOne’s backend is a modular, FastAPI-based system integrating hardware scanning, security analysis, AI insights, and real-time dashboards. The architecture emphasizes separation of concerns through routers, robust dependency injection, and a centralized WebSocket manager for live updates. While suitable for development and small deployments, production readiness requires stronger authentication/session management, HTTPS termination, and hardened deployment practices.
+PentexOne's backend is a modular, FastAPI-based system integrating hardware scanning, security analysis, AI insights, and real-time dashboards. The architecture emphasizes separation of concerns through routers, robust dependency injection, and an enhanced WebSocket manager for live updates. Recent improvements include advanced AI analysis capabilities, improved WebSocket management, and enhanced security engine integration. While suitable for development and small deployments, production readiness requires stronger authentication/session management, HTTPS termination, and hardened deployment practices.
 
-[No sources needed since this section summarizes without analyzing specific files]
+**Updated** Enhanced conclusion reflecting major backend improvements including AI analysis enhancements and WebSocket management improvements.
 
 ## Appendices
 
 ### Routing Patterns and Request/Response Handling
 - Routers use FastAPI decorators to define endpoints with typed request/response models.
 - Background tasks coordinate long-running operations and update clients via WebSocket.
+- AI analysis endpoints provide comprehensive security insights and recommendations.
+
+**Updated** Enhanced routing patterns to include AI analysis capabilities.
 
 **Section sources**
 - [routers/iot.py:291-413](file://backend/routers/iot.py#L291-L413)
@@ -606,6 +639,10 @@ PentexOne’s backend is a modular, FastAPI-based system integrating hardware sc
 - Default credentials should be changed; environment variables control login.
 - Enable firewall and consider HTTPS in production.
 - Limit CORS and headers in production environments.
+- AI analysis provides comprehensive security insights but requires careful interpretation.
+- Enhanced WebSocket management improves real-time communication reliability.
+
+**Updated** Enhanced security considerations for AI analysis and WebSocket management.
 
 **Section sources**
 - [main.py:25-27](file://backend/main.py#L25-L27)

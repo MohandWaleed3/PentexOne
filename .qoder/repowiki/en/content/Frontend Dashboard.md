@@ -8,11 +8,22 @@
 - [login.html](file://backend/static/login.html)
 - [main.py](file://backend/main.py)
 - [websocket_manager.py](file://backend/websocket_manager.py)
+- [ai.py](file://backend/routers/ai.py)
+- [ai_engine.py](file://backend/ai_engine.py)
 - [iot.py](file://backend/routers/iot.py)
 - [wifi_bt.py](file://backend/routers/wifi_bt.py)
 - [access_control.py](file://backend/routers/access_control.py)
 - [reports.py](file://backend/routers/reports.py)
 </cite>
+
+## Update Summary
+**Changes Made**
+- Enhanced AI recommendations display with interactive suggestion system
+- Improved real-time monitoring interface with WebSocket integration
+- Updated styling with new AI section layout and responsive design
+- Added AI security score visualization with circular progress indicator
+- Implemented device AI analysis with predicted vulnerabilities
+- Enhanced toast notification system with AI-specific alerts
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -27,19 +38,20 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document describes the modern web dashboard interface for PentexOne, a security auditing platform for IoT ecosystems. It covers the dark theme design, responsive layout, real-time updates via WebSocket, and analytics powered by Chart.js. It documents the JavaScript implementation, user interaction patterns, and integration with backend endpoints. It also provides customization guidelines, accessibility considerations, cross-browser compatibility notes, and performance optimization recommendations.
+This document describes the modern web dashboard interface for PentexOne, a security auditing platform for IoT ecosystems. The dashboard features enhanced AI recommendations display, improved real-time monitoring interface, and updated styling. It covers the dark theme design, responsive layout, real-time updates via WebSocket, and analytics powered by Chart.js. The implementation includes AI-powered security analysis, interactive navigation, toast notifications, and collapsible advanced options.
 
 ## Project Structure
-The dashboard is a client-side SPA served by the backend FastAPI application. The frontend assets (HTML, JS, CSS) are served under the `/dashboard` route, while the backend exposes REST APIs and a WebSocket endpoint for live events.
+The dashboard is a client-side SPA served by the backend FastAPI application. The frontend assets (HTML, JS, CSS) are served under the `/dashboard` route, while the backend exposes REST APIs and a WebSocket endpoint for live events. The AI engine provides intelligent security analysis and recommendations.
 
 ```mermaid
 graph TB
 Browser["Browser"]
 Login["Login Page<br/>login.html"]
 Dashboard["Dashboard SPA<br/>index.html + app.js + style.css"]
+AIEngine["AI Engine<br/>ai_engine.py"]
 API["FastAPI Backend<br/>main.py"]
 WS["WebSocket Endpoint<br/>/ws"]
-Routers["Routers<br/>iot.py, wifi_bt.py, access_control.py, reports.py"]
+Routers["Routers<br/>iot.py, wifi_bt.py, access_control.py, reports.py, ai.py"]
 DB["SQLite/ORM<br/>SQLAlchemy"]
 Browser --> Login
 Login --> API
@@ -48,6 +60,7 @@ Dashboard --> API
 Dashboard --> WS
 API --> Routers
 Routers --> DB
+AIEngine --> Routers
 ```
 
 **Diagram sources**
@@ -55,6 +68,7 @@ Routers --> DB
 - [index.html:1](file://backend/static/index.html#L1)
 - [app.js:1](file://backend/static/app.js#L1)
 - [style.css:1](file://backend/static/style.css#L1)
+- [ai_engine.py:1](file://backend/ai_engine.py#L1)
 - [iot.py:24](file://backend/routers/iot.py#L24)
 - [wifi_bt.py:27](file://backend/routers/wifi_bt.py#L27)
 - [access_control.py:13](file://backend/routers/access_control.py#L13)
@@ -73,30 +87,37 @@ Routers --> DB
 - Analytics dashboards using Chart.js doughnut and bar charts.
 - Interactive navigation, toast notifications, and collapsible advanced options.
 - Authentication flow with session storage and protected routes.
+- AI-powered security recommendations and device analysis.
+- Circular progress indicator for AI security score visualization.
+- Interactive suggestion system with actionable recommendations.
 
 **Section sources**
 - [style.css:1](file://backend/static/style.css#L1)
 - [index.html:17](file://backend/static/index.html#L17)
 - [app.js:113](file://backend/static/app.js#L113)
 - [app.js:40](file://backend/static/app.js#L40)
+- [ai_engine.py:236](file://backend/ai_engine.py#L236)
 
 ## Architecture Overview
-The dashboard initializes on DOMContentLoaded, sets up Chart.js instances, connects to the WebSocket, and loads initial data. Background scans emit events over WebSocket, which the client consumes to update UI state and toast notifications.
+The dashboard initializes on DOMContentLoaded, sets up Chart.js instances, connects to the WebSocket, and loads initial data including AI recommendations. Background scans emit events over WebSocket, which the client consumes to update UI state and toast notifications. The AI engine provides intelligent analysis and recommendations based on device characteristics and network patterns.
 
 ```mermaid
 sequenceDiagram
 participant U as "User"
 participant V as "Dashboard View<br/>index.html"
 participant JS as "App Logic<br/>app.js"
+participant AI as "AI Engine<br/>ai_engine.py"
 participant API as "FastAPI<br/>main.py"
 participant WS as "WebSocket<br/>/ws"
-participant RT as "Routers<br/>iot.py, wifi_bt.py"
+participant RT as "Routers<br/>iot.py, wifi_bt.py, ai.py"
 U->>V : Open /dashboard
 V->>JS : DOMContentLoaded
 JS->>API : GET /reports/summary
 JS->>API : GET /iot/devices
 JS->>API : GET /rfid/cards
 JS->>API : GET /settings
+JS->>API : GET /ai/suggestions
+JS->>API : GET /ai/security-score
 JS->>WS : Connect ws : //host/ws
 WS-->>JS : heartbeat
 U->>V : Trigger scan (Wi-Fi/Bluetooth/Zigbee/etc.)
@@ -106,12 +127,18 @@ RT-->>WS : broadcast scan_progress/scan_finished/device_found
 WS-->>JS : onmessage
 JS->>V : Update stats/charts/tables
 JS->>V : Show toast notifications
+JS->>AI : Analyze device patterns
+AI-->>JS : Predicted vulnerabilities
+JS->>V : Update AI recommendations
 ```
 
 **Diagram sources**
 - [app.js:14](file://backend/static/app.js#L14)
 - [app.js:113](file://backend/static/app.js#L113)
+- [app.js:989](file://backend/static/app.js#L989)
+- [app.js:1050](file://backend/static/app.js#L1050)
 - [main.py:90](file://backend/main.py#L90)
+- [ai_engine.py:247](file://backend/ai_engine.py#L247)
 - [iot.py:291](file://backend/routers/iot.py#L291)
 - [wifi_bt.py:182](file://backend/routers/wifi_bt.py#L182)
 
@@ -122,24 +149,28 @@ JS->>V : Show toast notifications
 - Dark theme: CSS variables define backgrounds, borders, and accents; glass panels use backdrop-filter blur.
 - Typography: Inter for UI, Outfit for login; consistent spacing and typography scales.
 - Responsive breakpoints: Sidebar collapses to icons-only; grid stacks to single column on small screens.
+- AI section: New dedicated area for security score and recommendations with flexible layout.
 
 ```mermaid
 flowchart TD
 Root["CSS Variables<br/>:root"] --> Theme["Dark Theme<br/>Backgrounds, Borders, Accents"]
 Theme --> Panels["Glass Panels<br/>.glass-panel"]
-Panels --> Layout["Layout Grids<br/>.stats-grid, .charts-row, .dashboard-layout"]
-Layout --> Responsive["Responsive Breakpoints<br/>.sidebar collapse, .stats-grid stack"]
+Panels --> Layout["Layout Grids<br/>.stats-grid, .charts-row, .dashboard-layout, .ai-section"]
+Layout --> Responsive["Responsive Breakpoints<br/>.sidebar collapse, .stats-grid stack, .ai-section wrap"]
+AI["AI Section<br/>.ai-section, .score-panel, .suggestions-panel"] --> Layout
 ```
 
 **Diagram sources**
 - [style.css:1](file://backend/static/style.css#L1)
 - [style.css:39](file://backend/static/style.css#L39)
 - [style.css:423](file://backend/static/style.css#L423)
+- [style.css:709](file://backend/static/style.css#L709)
 - [style.css:843](file://backend/static/style.css#L843)
 
 **Section sources**
 - [style.css:1](file://backend/static/style.css#L1)
 - [style.css:39](file://backend/static/style.css#L39)
+- [style.css:709](file://backend/static/style.css#L709)
 - [style.css:843](file://backend/static/style.css#L843)
 
 ### Navigation and Views
@@ -167,7 +198,7 @@ UpdateActive --> UpdateTitle["Update #pageTitle/#pageSubtitle"]
 ### Real-Time Updates via WebSocket
 - Connection: Establishes ws or wss depending on origin protocol; reconnects on close.
 - Events: Handles heartbeat, device_found, vulnerability_found, scan_progress, scan_finished, scan_error.
-- UI updates: Progress bar, toast notifications, device lists, summaries, charts.
+- UI updates: Progress bar, toast notifications, device lists, summaries, charts, AI recommendations.
 
 ```mermaid
 sequenceDiagram
@@ -179,7 +210,7 @@ WS-->>JS : onmessage (heartbeat)
 BE-->>WS : broadcast {event : "device_found", ...}
 WS-->>JS : onmessage
 JS->>JS : handleWebSocketMessage(data)
-JS->>DOM : Update stats, tables, charts, toasts
+JS->>DOM : Update stats, tables, charts, toasts, AI suggestions
 ```
 
 **Diagram sources**
@@ -247,7 +278,7 @@ API->>BG : run_nmap_scan(network)
 BG-->>WS : broadcast scan_progress
 WS-->>UI : updateScanProgress()
 BG-->>WS : broadcast scan_finished
-WS-->>UI : fetchDevices(), fetchSummary()
+WS-->>UI : fetchDevices(), fetchSummary(), fetchAISuggestions(), fetchAISecurityScore()
 ```
 
 **Diagram sources**
@@ -288,20 +319,28 @@ Details --> Vulns["Populate vulnerabilities list"]
 
 ### AI Security Score and Recommendations
 - AI Security Score: Circular progress indicator with grade and description.
-- AI Suggestions: Dynamic list with actionable items; clicking “Take Action” triggers scans or selections.
+- AI Suggestions: Dynamic list with actionable items; clicking "Take Action" triggers scans or selections.
 - Device AI Analysis: Predicted vulnerabilities and anomaly warnings.
+- Smart suggestions: Context-aware recommendations based on network analysis.
 
 ```mermaid
 sequenceDiagram
 participant UI as "Dashboard UI"
 participant API as "FastAPI"
+participant AI as "AI Engine"
 UI->>API : GET /ai/security-score
+API->>AI : Calculate security score
+AI-->>API : {score, grade, description}
 API-->>UI : {score, grade, description}
 UI->>UI : renderAISecurityScore()
 UI->>API : GET /ai/suggestions
+API->>AI : Analyze network patterns
+AI-->>API : {suggestions}
 API-->>UI : {suggestions}
 UI->>UI : renderAISuggestions()
 UI->>API : GET /ai/analyze/device/ : id
+API->>AI : Analyze single device
+AI-->>API : {analysis}
 API-->>UI : {analysis}
 UI->>UI : show predicted vulns/anomaly
 ```
@@ -310,11 +349,13 @@ UI->>UI : show predicted vulns/anomaly
 - [app.js:930](file://backend/static/app.js#L930)
 - [app.js:992](file://backend/static/app.js#L992)
 - [app.js:1025](file://backend/static/app.js#L1025)
+- [ai_engine.py:247](file://backend/ai_engine.py#L247)
 
 **Section sources**
 - [app.js:930](file://backend/static/app.js#L930)
 - [app.js:992](file://backend/static/app.js#L992)
 - [app.js:1025](file://backend/static/app.js#L1025)
+- [ai_engine.py:236](file://backend/ai_engine.py#L236)
 
 ### Authentication and Settings
 - Login page validates credentials against backend and stores session flag.
@@ -344,6 +385,7 @@ L->>U : Redirect to /dashboard
 - Frontend depends on Chart.js CDN for analytics, FontAwesome for icons, and local CSS/JS.
 - Backend exposes REST endpoints grouped by routers: IoT, Wireless/BLE, Access Control (RFID), Reports, AI.
 - WebSocket is centralized via ConnectionManager and broadcast to clients.
+- AI engine provides intelligent analysis and recommendations.
 
 ```mermaid
 graph LR
@@ -352,13 +394,16 @@ API --> IOT["routers/iot.py"]
 API --> WIFI["routers/wifi_bt.py"]
 API --> RFID["routers/access_control.py"]
 API --> REP["routers/reports.py"]
+API --> AI["routers/ai.py"]
 API --> WS["websocket_manager.py"]
 WS --> Clients["Connected Browsers"]
+AI --> Engine["ai_engine.py"]
 ```
 
 **Diagram sources**
 - [app.js:1](file://backend/static/app.js#L1)
 - [main.py:14](file://backend/main.py#L14)
+- [ai_engine.py:1](file://backend/ai_engine.py#L1)
 - [iot.py:24](file://backend/routers/iot.py#L24)
 - [wifi_bt.py:27](file://backend/routers/wifi_bt.py#L27)
 - [access_control.py:13](file://backend/routers/access_control.py#L13)
@@ -375,6 +420,8 @@ WS --> Clients["Connected Browsers"]
 - Polling: Scan status polling interval is reasonable; consider debouncing rapid UI updates.
 - Rendering: Virtualize large tables if device counts grow significantly.
 - Assets: CDN-hosted Chart.js and FontAwesome reduce local bandwidth; cache aggressively.
+- AI processing: Cache AI results and limit analysis frequency to improve performance.
+- Memory management: Clear intervals and timeouts when views change to prevent memory leaks.
 
 [No sources needed since this section provides general guidance]
 
@@ -384,6 +431,8 @@ WS --> Clients["Connected Browsers"]
 - Scans stuck at 0%: Confirm background tasks are running and WebSocket broadcast is active.
 - Authentication failures: Check credentials and ensure session storage flag is set post-login.
 - Toast audio: Some browsers block autoplay; user gesture required for audio playback.
+- AI suggestions not loading: Verify AI router endpoints are accessible and database contains device data.
+- Security score calculation errors: Check that devices exist and AI engine has proper configuration.
 
 **Section sources**
 - [app.js:113](file://backend/static/app.js#L113)
@@ -391,7 +440,7 @@ WS --> Clients["Connected Browsers"]
 - [login.html:189](file://backend/static/login.html#L189)
 
 ## Conclusion
-The PentexOne dashboard combines a modern dark theme with responsive design, real-time updates, and robust analytics. Its modular architecture integrates seamlessly with backend routers and WebSocket broadcasting, enabling live device discovery and actionable insights. The UI emphasizes clarity and safety with risk-based badges, animated feedback, and accessible controls.
+The PentexOne dashboard combines a modern dark theme with responsive design, real-time updates, and robust analytics. The enhanced AI recommendations system provides actionable insights and automated suggestions for network security improvements. Its modular architecture integrates seamlessly with backend routers, WebSocket broadcasting, and AI analysis engines, enabling live device discovery, intelligent security scoring, and actionable recommendations. The UI emphasizes clarity and safety with risk-based badges, animated feedback, and accessible controls.
 
 [No sources needed since this section summarizes without analyzing specific files]
 
@@ -411,19 +460,25 @@ The PentexOne dashboard combines a modern dark theme with responsive design, rea
 - Analytics with Chart.js:
   - [app.js:40](file://backend/static/app.js#L40)
   - [app.js:70](file://backend/static/app.js#L70)
+- AI recommendations and security scoring:
+  - [app.js:989](file://backend/static/app.js#L989)
+  - [app.js:1050](file://backend/static/app.js#L1050)
+  - [app.js:1083](file://backend/static/app.js#L1083)
 - Backend WebSocket integration:
   - [main.py:90](file://backend/main.py#L90)
   - [websocket_manager.py:21](file://backend/websocket_manager.py#L21)
 
 ### Customization Guidelines
 - Theming: Adjust CSS variables in :root to change accents, backgrounds, and status colors.
-- Layout: Modify grid and flex properties in .stats-grid, .charts-row, .dashboard-layout for different screen sizes.
+- Layout: Modify grid and flex properties in .stats-grid, .charts-row, .dashboard-layout, .ai-section for different screen sizes.
 - Animations: Toast animations and transitions are defined in CSS; adjust timing and easing as needed.
 - Components: Extend .glass-panel styles for additional panels; reuse button variants for consistency.
+- AI styling: Customize AI suggestion colors and gradients in .ai-suggestion-item and .score-circle.
 
 **Section sources**
 - [style.css:1](file://backend/static/style.css#L1)
 - [style.css:423](file://backend/static/style.css#L423)
+- [style.css:709](file://backend/static/style.css#L709)
 - [style.css:922](file://backend/static/style.css#L922)
 
 ### Accessibility Considerations
@@ -431,6 +486,7 @@ The PentexOne dashboard combines a modern dark theme with responsive design, rea
 - Color contrast: Verify sufficient contrast for text and status badges against dark backgrounds.
 - ARIA roles: Add roles and labels for dynamic regions updated by WebSocket messages.
 - Screen readers: Announce toast messages and critical alerts; provide skip links to main content.
+- AI recommendations: Ensure suggestion items are properly labeled and keyboard navigable.
 
 [No sources needed since this section provides general guidance]
 
@@ -439,6 +495,7 @@ The PentexOne dashboard combines a modern dark theme with responsive design, rea
 - WebSocket: Use wss on HTTPS; gracefully degrade on unsupported environments.
 - CSS: Backdrop-filter requires Safari 14+; provide fallbacks for older browsers.
 - Fetch API: Polyfill if targeting legacy browsers; promises are widely supported.
+- AI features: Ensure ES6 modules support for modern JavaScript features.
 
 [No sources needed since this section provides general guidance]
 
@@ -467,13 +524,21 @@ The PentexOne dashboard combines a modern dark theme with responsive design, rea
   - POST /wireless/tls/check/{host}
 - Reports:
   - GET /reports/generate/pdf
-- AI:
+- AI Analysis:
   - GET /ai/security-score
   - GET /ai/suggestions
   - GET /ai/analyze/device/{id}
+  - GET /ai/analyze/network
+  - GET /ai/remediation/{vuln_type}
+  - GET /ai/remediations
+  - GET /ai/predict/risks
+  - GET /ai/classify/devices
 
 **Section sources**
 - [main.py:50](file://backend/main.py#L50)
+- [ai.py:26](file://backend/routers/ai.py#L26)
+- [ai.py:106](file://backend/routers/ai.py#L106)
+- [ai.py:270](file://backend/routers/ai.py#L270)
 - [iot.py:591](file://backend/routers/iot.py#L591)
 - [wifi_bt.py:59](file://backend/routers/wifi_bt.py#L59)
 - [wifi_bt.py:182](file://backend/routers/wifi_bt.py#L182)

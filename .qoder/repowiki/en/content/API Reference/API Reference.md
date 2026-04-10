@@ -14,7 +14,18 @@
 - [websocket_manager.py](file://backend/websocket_manager.py)
 - [ai_engine.py](file://backend/ai_engine.py)
 - [requirements.txt](file://backend/requirements.txt)
+- [test_all.py](file://backend/test_all.py)
+- [README.md](file://backend/README.md)
 </cite>
+
+## Update Summary
+**Changes Made**
+- Enhanced IoT scanning API with new hardware detection capabilities
+- Improved WiFi/Bluetooth API with enhanced scanning functionality
+- Added detailed hardware status endpoint for comprehensive dongle detection
+- Updated device detection algorithms with better MAC address resolution
+- Enhanced WebSocket broadcasting for real-time device discovery
+- Improved error handling and progress reporting across all scanning endpoints
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -31,10 +42,12 @@
 ## Introduction
 This document provides comprehensive API documentation for the PentexOne IoT Security Platform. It covers all REST endpoints grouped by router modules, including IoT scanning, AI analysis, access control, wireless security, and reporting. It also documents WebSocket endpoints for real-time communication, authentication requirements, request/response schemas, error handling, rate limiting, security considerations, and API versioning.
 
+**Updated** Enhanced with new hardware detection capabilities and improved scanning functionality for comprehensive IoT security assessment.
+
 ## Project Structure
 The backend is organized around a FastAPI application that mounts multiple routers under distinct prefixes. Each router encapsulates a functional domain:
-- IoT scanning and discovery
-- Wireless security (Wi-Fi, Bluetooth)
+- IoT scanning and discovery with advanced hardware detection
+- Wireless security (Wi-Fi, Bluetooth) with enhanced scanning capabilities
 - Access control (RFID/NFC)
 - AI-powered analysis
 - Reporting and PDF generation
@@ -124,6 +137,8 @@ API-->>Client : "ScanStatus"
 - [database.py:56-61](file://backend/database.py#L56-L61)
 
 ### IoT Security Endpoints (/iot)
+**Updated** Enhanced with comprehensive hardware detection and improved device discovery capabilities.
+
 - GET /networks/discover
   - Response: JSON { networks: [{ network, interface, type }], count }
   - Notes: OS-specific discovery using system tools.
@@ -131,7 +146,7 @@ API-->>Client : "ScanStatus"
 - POST /scan/wifi
   - Request body: ScanRequest { network, timeout }
   - Response: ScanStatus { status, message, devices_found }
-  - Behavior: Background Nmap scan; emits progress and completion events via WebSocket.
+  - Behavior: Background Nmap scan with enhanced ARP integration; emits progress and completion events via WebSocket.
 
 - GET /scan/status
   - Response: JSON { running, progress, message, devices_found }
@@ -146,33 +161,34 @@ API-->>Client : "ScanStatus"
   - Response: JSON { message }
 
 - POST /scan/matter
-  - Response: ScanStatus; discovers Matter devices via mDNS.
+  - Response: ScanStatus; discovers Matter devices via mDNS with enhanced risk assessment.
 
 - POST /scan/zigbee
-  - Response: ScanStatus; uses KillerBee if available, otherwise simulated.
+  - Response: ScanStatus; uses KillerBee if available, otherwise simulated with improved device detection.
 
 - POST /scan/thread
-  - Response: ScanStatus; uses hardware if available, otherwise simulated.
+  - Response: ScanStatus; uses hardware if available, otherwise simulated with enhanced discovery.
 
 - POST /scan/zwave
-  - Response: ScanStatus; simulated with serial port detection.
+  - Response: ScanStatus; simulated with serial port detection and improved risk scoring.
 
 - POST /scan/lora
-  - Response: ScanStatus; simulated LoRaWAN discovery.
+  - Response: ScanStatus; simulated LoRaWAN discovery with comprehensive vulnerability assessment.
 
-- GET /devices/{device_id}
-  - Response: DeviceOut or 404 Not Found.
-
-- DELETE /devices
-  - Response: JSON { message }
+- GET /hardware/status
+  - Response: JSON { status, dongles, summary, killerbee_available, total_connected }
+  - Notes: Comprehensive hardware detection showing all connected dongles and their status.
 
 ```mermaid
 flowchart TD
 Start(["POST /iot/scan/wifi"]) --> Validate["Validate ScanRequest"]
 Validate --> StartScan["Start Background Nmap Scan"]
-StartScan --> Progress["Broadcast scan_progress"]
-Progress --> Found["On Host Found<br/>Save Device + Vulns"]
-Found --> Progress
+StartScan --> ARPDiscovery["Enhanced ARP Discovery"]
+ARPDiscovery --> NmapService["Nmap Service Detection"]
+NmapService --> RiskCalc["Calculate Risk & Vulnerabilities"]
+RiskCalc --> SaveDB["Save to Database"]
+SaveDB --> Broadcast["Broadcast device_found"]
+Broadcast --> Progress["Update Progress"]
 Progress --> Done{"Scan Complete?"}
 Done --> |No| Progress
 Done --> |Yes| Finish["Broadcast scan_finished"]
@@ -194,8 +210,11 @@ Finish --> Return["Return ScanStatus"]
 - [iot.py:783-800](file://backend/routers/iot.py#L783-L800)
 - [iot.py:591-593](file://backend/routers/iot.py#L591-L593)
 - [iot.py:599-619](file://backend/routers/iot.py#L599-L619)
+- [iot.py:1120-1159](file://backend/routers/iot.py#L1120-L1159)
 
 ### Wireless Security Endpoints (/wireless)
+**Updated** Enhanced with improved SSID scanning, better BLE detection, and comprehensive network device discovery.
+
 - GET /interfaces
   - Response: JSON { interfaces: [string] }
 
@@ -209,10 +228,10 @@ Finish --> Return["Return ScanStatus"]
   - Response: JSON { status, message }
 
 - POST /scan/bluetooth
-  - Response: ScanStatus; BLE discovery via Bleak if available.
+  - Response: ScanStatus; BLE discovery via Bleak if available with enhanced device classification.
 
 - GET /scan/ssids
-  - Response: JSON { status, ssids[], count } or partial/error variants.
+  - Response: JSON { status, ssids[], count } or partial/error variants with improved macOS compatibility.
 
 - POST /tls/check/{host}
   - Query params: port (default 443)
@@ -230,6 +249,7 @@ Finish --> Return["Return ScanStatus"]
 
 - POST /discover/devices
   - Response: JSON { status, network, message }
+  - Notes: One-click discovery of all devices on current network with enhanced detection.
 
 ```mermaid
 sequenceDiagram
@@ -239,9 +259,9 @@ participant Router as "Wireless Router"
 participant DB as "SQLAlchemy ORM"
 participant WS as "WebSocket Manager"
 Client->>Router : "POST /wireless/scan/bluetooth"
-Router->>Router : "Discover BLE devices"
-Router->>DB : "Upsert Device + Vulns"
-Router->>WS : "Optional broadcast"
+Router->>Router : "Enhanced BLE Device Discovery"
+Router->>DB : "Upsert Device + Vulnerabilities"
+Router->>WS : "Broadcast device_found"
 Router-->>Client : "ScanStatus"
 ```
 
@@ -260,6 +280,7 @@ Router-->>Client : "ScanStatus"
 - [wifi_bt.py:555-579](file://backend/routers/wifi_bt.py#L555-L579)
 - [wifi_bt.py:582-631](file://backend/routers/wifi_bt.py#L582-L631)
 - [wifi_bt.py:636-766](file://backend/routers/wifi_bt.py#L636-L766)
+- [wifi_bt.py:717-847](file://backend/routers/wifi_bt.py#L717-L847)
 
 ### Access Control Endpoints (/rfid)
 - POST /scan
@@ -441,8 +462,7 @@ Routers --> Crypto["cryptography"]
 - Nmap scans can be resource-intensive; tune network ranges and timeouts.
 - WebSocket broadcasting uses thread-safe coroutine scheduling; ensure minimal payload sizes for frequent events.
 - AI analysis relies on rule-based heuristics; results are deterministic and fast.
-
-[No sources needed since this section provides general guidance]
+- Enhanced hardware detection provides comprehensive dongle status monitoring.
 
 ## Troubleshooting Guide
 - Authentication failures: Ensure username/password match environment-backed constants.
@@ -450,17 +470,17 @@ Routers --> Crypto["cryptography"]
 - BLE scanning errors: Install bleak and ensure OS-level Bluetooth support.
 - TLS checks fail: Confirm target hosts expose HTTPS on the specified port and certificates are valid.
 - WebSocket disconnections: Check server logs for exceptions and ensure client reconnect logic.
+- Hardware detection issues: Use /iot/hardware/status endpoint to verify dongle connectivity.
 
 **Section sources**
 - [main.py:23-32](file://backend/main.py#L23-L32)
 - [wifi_bt.py:184-186](file://backend/routers/wifi_bt.py#L184-L186)
 - [wifi_bt.py:582-631](file://backend/routers/wifi_bt.py#L582-L631)
 - [websocket_manager.py:16-19](file://backend/websocket_manager.py#L16-L19)
+- [iot.py:1120-1159](file://backend/routers/iot.py#L1120-L1159)
 
 ## Conclusion
-The PentexOne API provides a comprehensive toolkit for IoT security scanning, AI-driven analysis, access control auditing, and reporting. Real-time updates via WebSocket enhance operational visibility. Adhering to the documented schemas, authentication, and security considerations ensures reliable operation across diverse environments.
-
-[No sources needed since this section summarizes without analyzing specific files]
+The PentexOne API provides a comprehensive toolkit for IoT security scanning, AI-driven analysis, access control auditing, and reporting. Real-time updates via WebSocket enhance operational visibility. The enhanced hardware detection capabilities and improved scanning functionality make it a powerful solution for comprehensive IoT security assessment across multiple wireless protocols.
 
 ## Appendices
 
@@ -508,9 +528,5 @@ The PentexOne API provides a comprehensive toolkit for IoT security scanning, AI
 - Input validation: All endpoints validate request bodies using Pydantic models.
 - Permissions: Restrict administrative endpoints (settings, device deletion) to authorized users.
 
-[No sources needed since this section provides general guidance]
-
 ### API Versioning
 - No explicit versioning scheme is implemented. Consider adding a version prefix (e.g., /api/v1) or Accept-Version header for future-proofing.
-
-[No sources needed since this section provides general guidance]

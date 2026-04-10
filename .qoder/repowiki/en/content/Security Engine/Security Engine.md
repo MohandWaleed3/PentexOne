@@ -14,22 +14,31 @@
 - [requirements.txt](file://backend/requirements.txt)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Enhanced AI security engine with new vulnerability prediction algorithms
+- Improved risk assessment scoring with expanded device analysis capabilities
+- Added advanced pattern recognition and anomaly detection features
+- Expanded protocol-specific vulnerability prediction logic
+- Enhanced confidence scoring mechanisms for AI-driven insights
+
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
 3. [Core Components](#core-components)
 4. [Architecture Overview](#architecture-overview)
 5. [Detailed Component Analysis](#detailed-component-analysis)
-6. [Dependency Analysis](#dependency-analysis)
-7. [Performance Considerations](#performance-considerations)
-8. [Troubleshooting Guide](#troubleshooting-guide)
-9. [Conclusion](#conclusion)
-10. [Appendices](#appendices)
+6. [Enhanced AI Security Engine](#enhanced-ai-security-engine)
+7. [Dependency Analysis](#dependency-analysis)
+8. [Performance Considerations](#performance-considerations)
+9. [Troubleshooting Guide](#troubleshooting-guide)
+10. [Conclusion](#conclusion)
+11. [Appendices](#appendices)
 
 ## Introduction
-This document explains PentexOne’s security analysis engines, focusing on:
+This document explains PentexOne's security analysis engines, focusing on:
 - The security_engine.py implementation: risk calculation algorithms, vulnerability mapping across 8+ IoT protocols, and protocol-specific security assessment logic
-- The AI security engine in ai_engine.py: pattern recognition, anomaly detection, predictive analysis, and recommendation generation
+- The AI security engine in ai_engine.py: enhanced pattern recognition, improved anomaly detection, predictive analysis, and recommendation generation
 - Integration between security analysis and AI-powered insights
 - Vulnerability database integration, default credential testing mechanisms, TLS/SSL validation processes, and firmware vulnerability checking
 - Performance considerations, accuracy metrics, and confidence scoring
@@ -38,7 +47,7 @@ This document explains PentexOne’s security analysis engines, focusing on:
 ## Project Structure
 The backend is organized around modular routers and engines:
 - Security engine: risk scoring and protocol-specific vulnerability mapping
-- AI engine: pattern recognition, anomaly detection, and recommendations
+- AI engine: enhanced pattern recognition, anomaly detection, and recommendations
 - Database models and SQLAlchemy ORM for persistence
 - Routers for IoT scanning, AI analysis, and reporting
 - WebSocket manager for real-time progress and events
@@ -94,10 +103,11 @@ REQ --> AE
   - TLS/SSL validation logic for protocol version, certificate expiration, self-signed certs, and cipher suite checks
   - Remediation mapping for actionable fixes
 - AI Engine (ai_engine.py)
-  - Device pattern recognition across IoT categories (cameras, routers, smart home, industrial, medical)
-  - Anomaly detection and confidence scoring
+  - Enhanced device pattern recognition across IoT categories (cameras, routers, smart home, industrial, medical)
+  - Advanced anomaly detection and confidence scoring with improved algorithms
   - Network-wide analysis, risk trend prediction, and dashboard suggestions
-  - Remediation knowledge base with prioritized steps
+  - Expanded remediation knowledge base with prioritized steps
+  - Protocol-based risk multipliers for comprehensive analysis
 - Database and Models (database.py, models.py)
   - ORM models for devices, vulnerabilities, RFID cards, and settings
   - SQLite-backed persistence with initialization and default settings
@@ -252,22 +262,27 @@ SE-->>Caller : "List of TLS vulnerability identifiers"
 **Section sources**
 - [security_engine.py:342-389](file://backend/security_engine.py#L342-L389)
 
-### AI Engine: Pattern Recognition, Anomaly Detection, Predictive Analysis
-- Device classification
+## Enhanced AI Security Engine
+
+### Advanced Pattern Recognition and Anomaly Detection
+The AI security engine has been significantly enhanced with improved algorithms for device classification and anomaly detection:
+
+- **Enhanced Device Classification**
   - Keyword-based and port-based pattern matching for cameras, routers, smart home, industrial, and medical devices
-  - Risk factor weights per pattern guide predictions
-- Anomaly detection
-  - Scores deviations from normal patterns (unusual ports, unknown vendor, high risk score)
-- Predictive analysis
-  - Trend analysis of risk counts across recent scans to predict escalations
-- Recommendations
-  - Prioritized remediation steps mapped to vulnerability types
-- Network-wide analysis
-  - Distribution of device types, protocols, risk levels, and vendor composition
-  - Anomaly detection at the network level (high-risk ratio, unencrypted protocols, unknown devices)
-  - Security score calculation (weighted average of risk levels)
-- Confidence scoring
-  - Adjusts confidence based on known device type, vendor, open ports, and protocol presence
+  - Risk factor weights per pattern guide predictions with improved accuracy
+  - Protocol-based risk multipliers for comprehensive analysis across Wi-Fi, Bluetooth, Zigbee, Thread, Z-Wave, and LoRaWAN
+- **Advanced Anomaly Detection**
+  - Enhanced anomaly scoring with improved threshold detection (0.85 threshold)
+  - Multi-factor analysis including unusual open ports, unknown vendors, and high-risk scores
+  - Dynamic confidence adjustment based on device characteristics
+- **Expanded Vulnerability Prediction**
+  - Vendor-specific predictions for known vulnerable devices (Hikvision, Dahua, Foscam)
+  - Protocol-based vulnerability prediction with confidence scoring
+  - Typical vulnerability patterns extracted from device type patterns
+- **Improved Confidence Scoring**
+  - Enhanced confidence calculation considering device type, vendor, open ports, and protocol presence
+  - Minimum confidence threshold of 0.5 with progressive increases
+  - Context-aware confidence adjustments for different device characteristics
 
 ```mermaid
 classDiagram
@@ -276,14 +291,14 @@ class AISecurityEngine {
 +analyze_network_patterns(devices) Dict
 +predict_future_risks(historical_scans) Dict
 +get_smart_dashboard_suggestions(devices, analysis) List
--_identify_device_type(device) str
--_predict_vulnerabilities(device, device_type) List
--_calculate_anomaly_score(device) float
--_generate_device_recommendations(device, predicted_vulns) List
--_calculate_confidence(device, device_type) float
--_detect_network_anomalies(devices, device_types, protocols) List
--_generate_network_recommendations(devices, device_types, risk_levels, anomalies) List
--_calculate_network_security_score(devices, risk_levels) Dict
++_identify_device_type(device) str
++_predict_vulnerabilities(device, device_type) List
++_calculate_anomaly_score(device) float
++_generate_device_recommendations(device, predicted_vulns) List
++_calculate_confidence(device, device_type) float
++_detect_network_anomalies(devices, device_types, protocols) List
++_generate_network_recommendations(devices, device_types, risk_levels, anomalies) List
++_calculate_network_security_score(devices, risk_levels) Dict
 }
 ```
 
@@ -291,6 +306,47 @@ class AISecurityEngine {
 - [ai_engine.py:236-740](file://backend/ai_engine.py#L236-L740)
 
 **Section sources**
+- [ai_engine.py:236-766](file://backend/ai_engine.py#L236-L766)
+
+### Network-Wide Analysis and Risk Prediction
+The AI engine now provides comprehensive network analysis capabilities:
+
+- **Pattern Analysis**
+  - Device type distribution analysis with minimum device threshold (3 devices)
+  - Protocol distribution across Wi-Fi, Bluetooth, Zigbee, Thread, Z-Wave, and LoRaWAN
+  - Risk level distribution (SAFE, MEDIUM, RISK) with vendor composition analysis
+- **Anomaly Detection**
+  - High-risk device ratio detection (>30% high-risk devices)
+  - Unencrypted protocol monitoring (Wi-Fi, Bluetooth)
+  - Unknown device type identification (>20% unknown devices)
+- **Risk Trend Prediction**
+  - Historical scan analysis for risk escalation prediction
+  - Trend direction analysis (increasing, decreasing, stable)
+  - Predictive risk device counting with confidence intervals
+- **Security Score Calculation**
+  - Weighted network security score (0-100 scale)
+  - Letter-grade assignment (A-F) with descriptive analysis
+  - Breakdown of device classifications for improvement planning
+
+```mermaid
+sequenceDiagram
+participant Client as "Dashboard/UI"
+participant AI as "AI Router"
+participant DB as "Database"
+participant AE as "AI Engine"
+Client->>AI : "GET /ai/analyze/network"
+AI->>DB : "SELECT * FROM devices"
+AI->>AE : "analyze_network_patterns(devices_dict)"
+AE-->>AI : "distributions, anomalies, recommendations, score"
+AI-->>Client : "Analysis results"
+```
+
+**Diagram sources**
+- [routers/ai.py:70-100](file://backend/routers/ai.py#L70-L100)
+- [ai_engine.py:464-513](file://backend/ai_engine.py#L464-L513)
+
+**Section sources**
+- [routers/ai.py:26-330](file://backend/routers/ai.py#L26-L330)
 - [ai_engine.py:236-766](file://backend/ai_engine.py#L236-L766)
 
 ### IoT Scanning and Integration with Security Engine
@@ -408,20 +464,18 @@ REQ --> AI
 
 ## Performance Considerations
 - Scanning performance
-  - Wi-Fi scan uses targeted ports (-p) and service version detection (-sV) to balance speed and insight
+  - Wi-Fi scan uses targeted ports and service version detection to balance speed and insight
   - Background tasks prevent blocking the main event loop; WebSocket broadcasts provide progress updates
 - Risk calculation
   - O(n) over open ports and protocol-specific checks; bounded by small fixed-size maps
   - Early exits for missing flags reduce overhead
 - AI analysis
-  - Pattern matching and anomaly detection are lightweight dictionary lookups and arithmetic
-  - Network-wide analysis scales linearly with device count
+  - Enhanced pattern matching and anomaly detection with improved computational efficiency
+  - Network-wide analysis scales linearly with device count with optimized algorithms
 - Database writes
   - Batched upserts and deletions of vulnerabilities per device minimize transaction overhead
 - TLS validation
   - Short timeouts and minimal socket operations; exceptions are handled gracefully
-
-[No sources needed since this section provides general guidance]
 
 ## Troubleshooting Guide
 - Hardware detection
@@ -442,9 +496,7 @@ REQ --> AI
 - [database.py:69-80](file://backend/database.py#L69-L80)
 
 ## Conclusion
-PentexOne’s security engines combine deterministic risk scoring with AI-driven pattern recognition and anomaly detection. The security engine provides robust protocol-specific assessments and remediation guidance, while the AI engine offers scalable classification, prediction, and recommendations. Together with real-time scanning and database persistence, the system delivers actionable insights for IoT security postures.
-
-[No sources needed since this section summarizes without analyzing specific files]
+PentexOne's enhanced security engines combine deterministic risk scoring with AI-driven pattern recognition and advanced anomaly detection. The security engine provides robust protocol-specific assessments and remediation guidance, while the AI engine offers scalable classification, prediction, and recommendations with improved accuracy and confidence scoring. Together with real-time scanning and database persistence, the system delivers comprehensive actionable insights for IoT security postures.
 
 ## Appendices
 
@@ -454,6 +506,4 @@ PentexOne’s security engines combine deterministic risk scoring with AI-driven
 - Protocol-specific assessment
   - Run Zigbee/Thread/Z-Wave/LoRaWAN scans; address protocol-specific vulnerabilities; validate TLS for exposed services
 - Threat modeling integration
-  - Use AI-generated device classifications to model attack surfaces; leverage anomaly detection to identify outliers; apply remediation priorities aligned with risk trends
-
-[No sources needed since this section provides general guidance]
+  - Use AI-generated device classifications to model attack surfaces; leverage enhanced anomaly detection to identify outliers; apply remediation priorities aligned with risk trends

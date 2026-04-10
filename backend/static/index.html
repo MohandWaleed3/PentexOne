@@ -3,7 +3,10 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0B0F19">
     <title>Pentex One - IoT Security Auditor</title>
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -16,8 +19,15 @@
 
 <body>
     <div class="app-container">
+        <!-- Mobile Menu Button -->
+        <button class="mobile-menu-toggle" id="mobileMenuBtn" onclick="toggleMobileMenu()" aria-label="Toggle navigation">
+            <i class="fa-solid fa-bars" id="menuIcon"></i>
+        </button>
+        <!-- Sidebar Overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeMobileMenu()"></div>
+        
         <!-- Sidebar Navigation -->
-        <nav class="sidebar">
+        <nav class="sidebar" id="sidebar">
             <div class="brand">
                 <i class="fa-solid fa-shield-halved neon-icon"></i>
                 <h2>Pentex One</h2>
@@ -407,6 +417,88 @@
         if (sessionStorage.getItem('pentex_auth') !== 'true') {
             window.location.href = '/login';
         }
+
+        // ===== Mobile Menu Toggle =====
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            const icon = document.getElementById('menuIcon');
+            
+            const isOpen = sidebar.classList.toggle('open');
+            
+            if (isOpen) {
+                overlay.style.display = 'block';
+                requestAnimationFrame(() => overlay.classList.add('active'));
+                icon.className = 'fa-solid fa-xmark';
+            } else {
+                closeMobileMenu();
+            }
+        }
+
+        function closeMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            const icon = document.getElementById('menuIcon');
+            
+            sidebar.classList.remove('open');
+            overlay.classList.remove('active');
+            icon.className = 'fa-solid fa-bars';
+            
+            setTimeout(() => {
+                if (!overlay.classList.contains('active')) {
+                    overlay.style.display = 'none';
+                }
+            }, 300);
+        }
+
+        // Auto-close sidebar when a nav link is clicked on mobile
+        document.querySelectorAll('.nav-links a').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth <= 768) {
+                    closeMobileMenu();
+                }
+            });
+        });
+
+        // ===== Lightweight Mode for Raspberry Pi =====
+        // Detect low-power devices: RPi typically has <=4 cores and limited GPU
+        (function detectLightweightMode() {
+            const isLowEnd = (
+                navigator.hardwareConcurrency <= 4 ||
+                /armv|aarch64|Raspberry/i.test(navigator.userAgent) ||
+                (navigator.deviceMemory && navigator.deviceMemory <= 4) ||
+                window.matchMedia('(prefers-reduced-motion: reduce)').matches
+            );
+
+            // Also check for Chromium on small screens (kiosk mode on Pi)
+            const isSmallKiosk = (
+                window.innerWidth <= 1024 && 
+                window.innerHeight <= 768 && 
+                /Linux/.test(navigator.userAgent)
+            );
+
+            if (isLowEnd || isSmallKiosk) {
+                document.body.classList.add('lightweight-mode');
+                console.log('[Perf] Lightweight mode enabled for low-power device');
+            }
+
+            // Also allow manual toggle via settings or URL param
+            if (new URLSearchParams(window.location.search).has('lightweight')) {
+                document.body.classList.add('lightweight-mode');
+                console.log('[Perf] Lightweight mode enabled via URL param');
+            }
+        })();
+
+        // ===== Handle window resize =====
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (window.innerWidth > 768) {
+                    closeMobileMenu();
+                }
+            }, 250);
+        });
     </script>
 </body>
 

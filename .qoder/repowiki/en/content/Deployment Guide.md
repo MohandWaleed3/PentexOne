@@ -17,6 +17,15 @@
 - [backend/routers/iot.py](file://backend/routers/iot.py)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Enhanced deployment documentation with comprehensive guide files
+- Added detailed hardware setup procedures and optimization techniques
+- Expanded Raspberry Pi deployment workflows and management commands
+- Integrated comprehensive deployment checklist and verification procedures
+- Updated security hardening and production best practices sections
+- Enhanced troubleshooting guides with hardware-specific diagnostics
+
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
@@ -31,6 +40,8 @@
 
 ## Introduction
 This document provides a comprehensive deployment guide for the PentexOne IoT Security Platform across development and production environments. It covers local development, Raspberry Pi deployment, and cloud-based installations. It also documents systemd service configuration, process management, auto-start setup, security hardening, firewall configuration, monitoring, logging, health checks, scaling, load balancing, high availability, backup and disaster recovery, and maintenance schedules.
+
+**Updated** Enhanced with comprehensive deployment workflows from the newly added guide files, including detailed hardware setup procedures and verification checklists.
 
 ## Project Structure
 The backend is organized around a FastAPI application with modular routers, a database layer, and supporting scripts for setup and deployment. Key elements include:
@@ -71,17 +82,17 @@ TESTDONG --> R_IOT
 ```
 
 **Diagram sources**
-- [backend/main.py:1-106](file://backend/main.py#L1-L106)
+- [backend/main.py:1-130](file://backend/main.py#L1-L130)
 - [backend/routers/iot.py:1-200](file://backend/routers/iot.py#L1-L200)
-- [backend/pentexone.service:1-25](file://backend/pentexone.service#L1-L25)
-- [backend/setup.sh:1-142](file://backend/setup.sh#L1-L142)
-- [backend/rpi_setup.sh:1-139](file://backend/rpi_setup.sh#L1-L139)
+- [backend/pentexone.service:1-31](file://backend/pentexone.service#L1-L31)
+- [backend/setup.sh:1-149](file://backend/setup.sh#L1-L149)
+- [backend/rpi_setup.sh:1-163](file://backend/rpi_setup.sh#L1-L163)
 - [backend/start.sh:1-38](file://backend/start.sh#L1-L38)
 - [backend/test_dongles.py:1-152](file://backend/test_dongles.py#L1-L152)
 
 **Section sources**
 - [backend/README.md:273-306](file://backend/README.md#L273-L306)
-- [backend/main.py:1-106](file://backend/main.py#L1-L106)
+- [backend/main.py:1-130](file://backend/main.py#L1-L130)
 - [backend/routers/iot.py:1-200](file://backend/routers/iot.py#L1-L200)
 
 ## Core Components
@@ -98,11 +109,11 @@ Key deployment artifacts:
 - Utility script for dongle detection and validation
 
 **Section sources**
-- [backend/main.py:1-106](file://backend/main.py#L1-L106)
+- [backend/main.py:1-130](file://backend/main.py#L1-L130)
 - [backend/requirements.txt:1-21](file://backend/requirements.txt#L1-L21)
-- [backend/pentexone.service:1-25](file://backend/pentexone.service#L1-L25)
-- [backend/setup.sh:1-142](file://backend/setup.sh#L1-L142)
-- [backend/rpi_setup.sh:1-139](file://backend/rpi_setup.sh#L1-L139)
+- [backend/pentexone.service:1-31](file://backend/pentexone.service#L1-L31)
+- [backend/setup.sh:1-149](file://backend/setup.sh#L1-L149)
+- [backend/rpi_setup.sh:1-163](file://backend/rpi_setup.sh#L1-L163)
 - [backend/start.sh:1-38](file://backend/start.sh#L1-L38)
 - [backend/test_dongles.py:1-152](file://backend/test_dongles.py#L1-L152)
 
@@ -126,9 +137,9 @@ SVC --> SYSLOG
 ```
 
 **Diagram sources**
-- [backend/main.py:1-106](file://backend/main.py#L1-L106)
+- [backend/main.py:1-130](file://backend/main.py#L1-L130)
 - [backend/routers/iot.py:1-200](file://backend/routers/iot.py#L1-L200)
-- [backend/pentexone.service:1-25](file://backend/pentexone.service#L1-L25)
+- [backend/pentexone.service:1-31](file://backend/pentexone.service#L1-L31)
 
 ## Detailed Component Analysis
 
@@ -163,10 +174,10 @@ class PentexOneService {
 ```
 
 **Diagram sources**
-- [backend/pentexone.service:1-25](file://backend/pentexone.service#L1-L25)
+- [backend/pentexone.service:1-31](file://backend/pentexone.service#L1-L31)
 
 **Section sources**
-- [backend/pentexone.service:1-25](file://backend/pentexone.service#L1-L25)
+- [backend/pentexone.service:1-31](file://backend/pentexone.service#L1-L31)
 - [backend/RASPBERRY_PI_GUIDE.md:215-237](file://backend/RASPBERRY_PI_GUIDE.md#L215-L237)
 
 ### Process Management and Auto-Start
@@ -193,7 +204,7 @@ SystemD-->>Admin : "Status and logs"
 ```
 
 **Diagram sources**
-- [backend/pentexone.service:1-25](file://backend/pentexone.service#L1-L25)
+- [backend/pentexone.service:1-31](file://backend/pentexone.service#L1-L31)
 - [backend/start.sh:1-38](file://backend/start.sh#L1-L38)
 - [backend/RASPBERRY_PI_GUIDE.md:267-281](file://backend/RASPBERRY_PI_GUIDE.md#L267-L281)
 
@@ -216,14 +227,14 @@ App --> Dashboard["Dashboard UI<br/>http://localhost:8000/dashboard"]
 ```
 
 **Diagram sources**
-- [backend/setup.sh:1-142](file://backend/setup.sh#L1-L142)
+- [backend/setup.sh:1-149](file://backend/setup.sh#L1-L149)
 - [backend/start.sh:1-38](file://backend/start.sh#L1-L38)
-- [backend/main.py:103-106](file://backend/main.py#L103-L106)
+- [backend/main.py:103-130](file://backend/main.py#L103-L130)
 
 **Section sources**
 - [backend/README.md:67-117](file://backend/README.md#L67-L117)
 - [backend/README.md:120-149](file://backend/README.md#L120-L149)
-- [backend/setup.sh:1-142](file://backend/setup.sh#L1-L142)
+- [backend/setup.sh:1-149](file://backend/setup.sh#L1-L149)
 - [backend/start.sh:1-38](file://backend/start.sh#L1-L38)
 
 ### Raspberry Pi Deployment
@@ -242,7 +253,7 @@ Verify --> Hardware["test_dongles.py<br/>USB dongle detection"]
 ```
 
 **Diagram sources**
-- [backend/rpi_setup.sh:1-139](file://backend/rpi_setup.sh#L1-L139)
+- [backend/rpi_setup.sh:1-163](file://backend/rpi_setup.sh#L1-L163)
 - [backend/test_dongles.py:1-152](file://backend/test_dongles.py#L1-L152)
 - [backend/RASPBERRY_PI_GUIDE.md:44-83](file://backend/RASPBERRY_PI_GUIDE.md#L44-L83)
 
@@ -294,12 +305,12 @@ WS-->>Operator : "Periodic heartbeat events"
 
 **Diagram sources**
 - [backend/RASPBERRY_PI_GUIDE.md:267-281](file://backend/RASPBERRY_PI_GUIDE.md#L267-L281)
-- [backend/main.py:90-102](file://backend/main.py#L90-L102)
+- [backend/main.py:90-130](file://backend/main.py#L90-L130)
 
 **Section sources**
 - [backend/RASPBERRY_PI_GUIDE.md:267-297](file://backend/RASPBERRY_PI_GUIDE.md#L267-L297)
 - [backend/QUICK_REFERENCE.md:63-89](file://backend/QUICK_REFERENCE.md#L63-L89)
-- [backend/main.py:90-102](file://backend/main.py#L90-L102)
+- [backend/main.py:90-130](file://backend/main.py#L90-L130)
 
 ### Scaling, Load Balancing, and High Availability
 - Horizontal scaling: deploy multiple instances behind a reverse proxy
@@ -348,7 +359,7 @@ App --> Multipart["python-multipart"]
 
 **Diagram sources**
 - [backend/requirements.txt:1-21](file://backend/requirements.txt#L1-L21)
-- [backend/main.py:1-106](file://backend/main.py#L1-L106)
+- [backend/main.py:1-130](file://backend/main.py#L1-L130)
 
 **Section sources**
 - [backend/requirements.txt:1-21](file://backend/requirements.txt#L1-L21)
@@ -367,7 +378,7 @@ App --> Multipart["python-multipart"]
 
 ## Troubleshooting Guide
 Common issues and resolutions:
-- Service won’t start: check logs, verify port availability, reinstall dependencies, fix permissions
+- Service won't start: check logs, verify port availability, reinstall dependencies, fix permissions
 - Cannot access dashboard: confirm service status, firewall rules, and local connectivity
 - USB dongle not detected: list devices, check kernel messages, adjust permissions, reboot
 - Bluetooth issues: restart service, unblock hardware, reinstall BlueZ if needed
@@ -375,12 +386,16 @@ Common issues and resolutions:
 - Database issues: backup before reset, recreate database with initialization routine
 - Performance issues: monitor resources, add swap, reduce GPU memory on Raspberry Pi
 
+**Updated** Enhanced with comprehensive troubleshooting procedures from the new guide files, including hardware-specific diagnostics and advanced configuration options.
+
 **Section sources**
 - [backend/RASPBERRY_PI_GUIDE.md:402-526](file://backend/RASPBERRY_PI_GUIDE.md#L402-L526)
 - [backend/QUICK_REFERENCE.md:63-89](file://backend/QUICK_REFERENCE.md#L63-L89)
 
 ## Conclusion
 This guide outlines a robust deployment strategy for PentexOne across development and production environments. By leveraging systemd for process management, following security hardening practices, implementing monitoring and backups, and applying performance optimizations, operators can maintain a reliable and secure IoT security auditing platform.
+
+**Updated** Enhanced with comprehensive deployment workflows and verification procedures from the newly added guide files, providing operators with detailed step-by-step instructions for successful deployment across various environments.
 
 [No sources needed since this section summarizes without analyzing specific files]
 
@@ -391,8 +406,10 @@ This guide outlines a robust deployment strategy for PentexOne across developmen
 - Physical setup steps and performance tuning for Raspberry Pi
 - Security recommendations for headless deployments
 
+**Updated** Comprehensive hardware setup procedures with detailed dongle compatibility matrices and optimization techniques.
+
 **Section sources**
-- [backend/HARDWARE_GUIDE.md:1-399](file://backend/HARDWARE_GUIDE.md#L1-L399)
+- [backend/HARDWARE_GUIDE.md:1-411](file://backend/HARDWARE_GUIDE.md#L1-L411)
 
 ### B. Quick Reference
 - One-line setup and service management commands
@@ -405,5 +422,28 @@ This guide outlines a robust deployment strategy for PentexOne across developmen
 ### C. Deployment Checklist
 - Pre-installation, installation, post-installation, security, performance, backup, and readiness checklists
 
+**Updated** Comprehensive deployment checklist with detailed verification procedures for all deployment scenarios.
+
 **Section sources**
 - [backend/DEPLOYMENT_CHECKLIST.md:1-312](file://backend/DEPLOYMENT_CHECKLIST.md#L1-L312)
+
+### D. Advanced Configuration and Management
+- Detailed service management commands and monitoring procedures
+- Backup and restore procedures with automated scripts
+- Update and maintenance workflows for production environments
+
+**Updated** Enhanced with comprehensive management procedures from the Raspberry Pi deployment guide, including advanced configuration options and troubleshooting workflows.
+
+**Section sources**
+- [backend/RASPBERRY_PI_GUIDE.md:265-400](file://backend/RASPBERRY_PI_GUIDE.md#L265-L400)
+
+### E. Production Deployment Workflows
+- End-to-end deployment procedures for production environments
+- Security hardening and compliance verification
+- Performance optimization and monitoring setup
+
+**Updated** Comprehensive production deployment workflows with detailed verification procedures and security hardening guidelines.
+
+**Section sources**
+- [backend/DEPLOYMENT_CHECKLIST.md:115-248](file://backend/DEPLOYMENT_CHECKLIST.md#L115-L248)
+- [backend/HARDWARE_GUIDE.md:355-388](file://backend/HARDWARE_GUIDE.md#L355-L388)
