@@ -41,6 +41,8 @@
                             class="fa-solid fa-file-pdf"></i> PDF Reports</a></li>
                 <li id="nav-settings"><a href="#" onclick="app.switchView('settings')"><i class="fa-solid fa-gear"></i>
                         Settings</a></li>
+                <li id="nav-advanced-wifi"><a href="#" onclick="app.switchView('advanced-wifi')"><i class="fa-solid fa-satellite-dish"></i>
+                        Advanced WiFi</a></li>
             </ul>
         </nav>
 
@@ -89,25 +91,35 @@
                     </div>
                     
                     <div id="advancedOptions" class="advanced-options hidden">
-                        <div class="network-config">
+                        <!-- Quick Scan -->
+                        <div class="quick-scan-section" style="margin-bottom: 15px;">
+                            <button class="btn btn-primary btn-large btn-full" onclick="app.discoverAndScan()">
+                                <i class="fa-solid fa-bolt"></i> Quick Auto-Scan
+                            </button>
+                            <p style="font-size: 11px; color: var(--text-muted); margin-top: 5px; text-align: center;">
+                                Detects your network and scans automatically
+                            </p>
+                        </div>
+                        
+                        <!-- Manual Network Input -->
+                        <div class="network-config" style="border-top: 1px solid var(--border-color); padding-top: 15px;">
+                            <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 8px;">
+                                Manual Network Range:
+                            </label>
                             <div class="input-action">
-                                <select id="networkSelect" class="network-select">
-                                    <option value="">Discovering networks...</option>
-                                </select>
-                                <button class="btn btn-outline-blue" onclick="app.discoverNetworks()">
-                                    <i class="fa-solid fa-magnifying-glass"></i> Discover
+                                <input type="text" id="networkInput" value="192.168.1.0/24" placeholder="e.g., 192.168.1.0/24">
+                                <button class="btn btn-outline-blue" onclick="app.startScan('wifi')">
+                                    <i class="fa-solid fa-play"></i> Scan
                                 </button>
-                            </div>
-                            <div class="input-action" style="margin-top: 10px;">
-                                <input type="text" id="networkInput" value="192.168.1.0/24" placeholder="Or enter network range">
-                                <button class="btn btn-outline-blue" onclick="app.startScan('wifi')">Scan Network</button>
                             </div>
                         </div>
                         
-                        <!-- Additional Protocols -->
-                        <div class="additional-protocols">
-                            <h4 style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">Additional Protocols:</h4>
-                            <div class="protocol-buttons">
+                        <!-- Additional Protocols (Collapsed by default) -->
+                        <div class="additional-protocols" style="border-top: 1px solid var(--border-color); padding-top: 15px; margin-top: 15px;">
+                            <button class="btn btn-text btn-small" onclick="app.toggleProtocols()" style="width: 100%; justify-content: center;">
+                                <i class="fa-solid fa-layer-group"></i> More Protocols <i class="fa-solid fa-chevron-down" id="protocolIcon"></i>
+                            </button>
+                            <div id="protocolButtons" class="protocol-buttons hidden" style="margin-top: 10px;">
                                 <button class="btn btn-outline-pink" onclick="app.startScan('zwave')">
                                     <i class="fa-solid fa-tower-broadcast"></i> Z-Wave
                                 </button>
@@ -118,12 +130,6 @@
                                     <i class="fa-solid fa-house-signal"></i> Matter
                                 </button>
                             </div>
-                        </div>
-                        
-                        <!-- Nearby SSIDs -->
-                        <div id="nearbySsidsContainer" class="nearby-ssids-list hidden" style="margin-top: 15px;">
-                            <h4 style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Nearby Wi-Fi Networks:</h4>
-                            <div id="ssidsList" class="ssids-scroll"></div>
                         </div>
                     </div>
                 </section>
@@ -404,6 +410,216 @@
                 </div>
             </div>
 
+            <!-- ================= VIEW: ADVANCED WIFI ================= -->
+            <div id="view-advanced-wifi" class="view-section hidden">
+                <!-- Monitor Mode Card -->
+                <div class="glass-panel adv-wifi-card">
+                    <div class="adv-wifi-card-header">
+                        <div class="adv-wifi-icon monitor-icon"><i class="fa-solid fa-eye"></i></div>
+                        <h3>Monitor Mode</h3>
+                        <span id="monitorStatusBadge" class="badge safe">Inactive</span>
+                    </div>
+                    <p class="adv-wifi-desc">Put the built-in WiFi chip into monitor mode to capture all wireless frames in the air, even for networks you're not connected to.</p>
+                    <div class="adv-wifi-controls">
+                        <select id="monitorInterface" class="network-select" style="max-width:200px">
+                            <option value="wlan0">wlan0</option>
+                        </select>
+                        <button class="btn btn-primary" id="btnMonitorEnable" onclick="app.enableMonitor()">
+                            <i class="fa-solid fa-play"></i> Enable Monitor
+                        </button>
+                        <button class="btn btn-danger" id="btnMonitorDisable" onclick="app.disableMonitor()" disabled>
+                            <i class="fa-solid fa-stop"></i> Disable
+                        </button>
+                        <div class="input-action" style="max-width:200px">
+                            <input type="number" id="monitorChannel" placeholder="Channel (1-13)" min="1" max="13" style="width:100px">
+                            <button class="btn btn-outline-blue" onclick="app.setMonitorChannel()">Set</button>
+                        </div>
+                    </div>
+                    <div id="monitorInfo" class="adv-wifi-info hidden">
+                        <div class="adv-wifi-info-grid">
+                            <div class="metric"><span class="label">Interface</span><span class="value" id="monitorIface">--</span></div>
+                            <div class="metric"><span class="label">Mode</span><span class="value" id="monitorModeVal">--</span></div>
+                            <div class="metric"><span class="label">Channel</span><span class="value" id="monitorChannelVal">--</span></div>
+                            <div class="metric"><span class="label">Uptime</span><span class="value" id="monitorUptime">--</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Client Sniffer Card -->
+                <div class="glass-panel adv-wifi-card">
+                    <div class="adv-wifi-card-header">
+                        <div class="adv-wifi-icon sniffer-icon"><i class="fa-solid fa-radar"></i></div>
+                        <h3>Client Sniffer</h3>
+                        <span id="snifferStatusBadge" class="badge safe">Inactive</span>
+                    </div>
+                    <p class="adv-wifi-desc">Discover devices around you without connecting to any network. Captures Probe Requests and Data Frames to reveal MAC addresses, preferred SSIDs, and signal strength.</p>
+                    <div class="adv-wifi-controls">
+                        <div class="input-action" style="max-width:150px">
+                            <input type="number" id="snifferDuration" value="30" placeholder="Duration (s)" min="10" max="300">
+                        </div>
+                        <button class="btn btn-outline-purple" id="btnSnifferStart" onclick="app.startSniffer()">
+                            <i class="fa-solid fa-play"></i> Start Sniffing
+                        </button>
+                        <button class="btn btn-danger" id="btnSnifferStop" onclick="app.stopSniffer()" disabled>
+                            <i class="fa-solid fa-stop"></i> Stop
+                        </button>
+                    </div>
+                    <div id="snifferStats" class="adv-wifi-info hidden">
+                        <div class="adv-wifi-info-grid">
+                            <div class="metric"><span class="label">Clients Found</span><span class="value" id="snifferClientCount">0</span></div>
+                            <div class="metric"><span class="label">Probe Requests</span><span class="value" id="snifferProbeCount">0</span></div>
+                            <div class="metric"><span class="label">Packets Captured</span><span class="value" id="snifferPacketCount">0</span></div>
+                            <div class="metric"><span class="label">Duration</span><span class="value" id="snifferDurationVal">--</span></div>
+                        </div>
+                    </div>
+                    <div id="snifferClientsList" class="adv-wifi-results hidden">
+                        <h4 class="adv-wifi-results-title">Discovered Clients</h4>
+                        <div class="table-responsive" style="max-height:250px">
+                            <table id="snifferClientsTable">
+                                <thead><tr><th>MAC Address</th><th>Probed SSID</th><th>Signal (dBm)</th><th>Last Seen</th></tr></thead>
+                                <tbody id="snifferClientsBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Handshake Capture Card -->
+                <div class="glass-panel adv-wifi-card">
+                    <div class="adv-wifi-card-header">
+                        <div class="adv-wifi-icon handshake-icon"><i class="fa-solid fa-handshake"></i></div>
+                        <h3>WPA Handshake Capture</h3>
+                        <span id="handshakeStatusBadge" class="badge safe">Inactive</span>
+                    </div>
+                    <p class="adv-wifi-desc">Capture the 4-way WPA handshake when a client connects to a target AP. The captured handshake can be used for offline password auditing.</p>
+                    <div class="adv-wifi-controls">
+                        <div class="input-action">
+                            <input type="text" id="handshakeBSSID" placeholder="Target BSSID" style="width:160px;font-family:monospace">
+                        </div>
+                        <div class="input-action">
+                            <input type="number" id="handshakeChannel" placeholder="Channel" min="1" max="13" style="width:80px">
+                        </div>
+                        <div class="input-action">
+                            <input type="text" id="handshakeSSID" placeholder="Target SSID" style="width:140px">
+                        </div>
+                        <div class="input-action">
+                            <input type="number" id="handshakeTimeout" value="60" placeholder="Timeout (s)" min="10" max="600" style="width:100px">
+                        </div>
+                        <button class="btn btn-outline-orange" id="btnHandshakeStart" onclick="app.startHandshake()">
+                            <i class="fa-solid fa-play"></i> Capture
+                        </button>
+                        <button class="btn btn-danger" id="btnHandshakeStop" onclick="app.stopHandshake()" disabled>
+                            <i class="fa-solid fa-stop"></i> Stop
+                        </button>
+                    </div>
+                    <div id="handshakeProgress" class="adv-wifi-info hidden">
+                        <div class="adv-wifi-info-grid">
+                            <div class="metric"><span class="label">Target</span><span class="value" id="handshakeTargetVal">--</span></div>
+                            <div class="metric"><span class="label">Channel</span><span class="value" id="handshakeChannelVal">--</span></div>
+                            <div class="metric"><span class="label">EAPOL Packets</span><span class="value" id="handshakeEapolCount">0</span></div>
+                            <div class="metric"><span class="label">Status</span><span class="value" id="handshakeCaptureStatus">Listening...</span></div>
+                        </div>
+                        <div id="handshakeCapturedAlert" class="adv-wifi-alert success hidden">
+                            <i class="fa-solid fa-check-circle"></i> Handshake captured successfully! Saved to pcap file.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Deauth Attack Test Card -->
+                <div class="glass-panel adv-wifi-card">
+                    <div class="adv-wifi-card-header">
+                        <div class="adv-wifi-icon deauth-icon"><i class="fa-solid fa-bolt"></i></div>
+                        <h3>Deauth Attack Test</h3>
+                        <span id="deauthTestBadge" class="badge safe">Inactive</span>
+                    </div>
+                    <p class="adv-wifi-desc">Test connection resilience by sending deauthentication frames. Determines if the network has 802.11w Management Frame Protection (MFP) enabled.</p>
+                    <div class="adv-wifi-controls">
+                        <div class="input-action">
+                            <input type="text" id="deauthTargetMac" placeholder="Target MAC" style="width:140px;font-family:monospace">
+                        </div>
+                        <div class="input-action">
+                            <input type="text" id="deauthApBssid" placeholder="AP BSSID" style="width:140px;font-family:monospace">
+                        </div>
+                        <div class="input-action">
+                            <input type="number" id="deauthChannel" placeholder="Channel" min="1" max="13" style="width:80px">
+                        </div>
+                        <div class="input-action">
+                            <input type="number" id="deauthCount" value="5" placeholder="Count" min="1" max="50" style="width:80px">
+                        </div>
+                        <button class="btn btn-outline-red" id="btnDeauthTest" onclick="app.startDeauthTest()">
+                            <i class="fa-solid fa-bolt"></i> Test Resilience
+                        </button>
+                    </div>
+                    <div id="deauthTestResult" class="adv-wifi-info hidden">
+                        <div class="adv-wifi-info-grid">
+                            <div class="metric"><span class="label">Packets Sent</span><span class="value" id="deauthPacketsSent">0</span></div>
+                            <div class="metric"><span class="label">Client Disconnected</span><span class="value" id="deauthClientDisconnected">--</span></div>
+                            <div class="metric"><span class="label">802.11w MFP</span><span class="value" id="deauthMfpStatus">--</span></div>
+                            <div class="metric"><span class="label">Verdict</span><span class="value" id="deauthVerdict">--</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Rogue AP Detection Card -->
+                <div class="glass-panel adv-wifi-card">
+                    <div class="adv-wifi-card-header">
+                        <div class="adv-wifi-icon rogue-icon"><i class="fa-solid fa-mask"></i></div>
+                        <h3>Rogue AP / Evil Twin Detection</h3>
+                        <span id="rogueStatusBadge" class="badge safe">Inactive</span>
+                    </div>
+                    <p class="adv-wifi-desc">Detect access points impersonating legitimate networks (same SSID, different BSSID). Critical for identifying MITM and phishing attacks.</p>
+                    <div class="adv-wifi-controls">
+                        <div class="input-action" style="max-width:150px">
+                            <input type="number" id="rogueDuration" value="30" placeholder="Duration (s)" min="10" max="300">
+                        </div>
+                        <button class="btn btn-outline-pink" id="btnRogueStart" onclick="app.startRogueDetection()">
+                            <i class="fa-solid fa-play"></i> Start Detection
+                        </button>
+                        <button class="btn btn-danger" id="btnRogueStop" onclick="app.stopRogueDetection()" disabled>
+                            <i class="fa-solid fa-stop"></i> Stop
+                        </button>
+                    </div>
+                    <div id="rogueAlerts" class="adv-wifi-results hidden">
+                        <h4 class="adv-wifi-results-title">Alerts <span id="rogueAlertCount" class="badge risk" style="font-size:10px">0</span></h4>
+                        <div id="rogueAlertsList" class="adv-wifi-alert-list"></div>
+                    </div>
+                    <div id="rogueKnownAps" class="adv-wifi-results hidden">
+                        <h4 class="adv-wifi-results-title">Known Access Points</h4>
+                        <div class="table-responsive" style="max-height:200px">
+                            <table id="rogueApsTable">
+                                <thead><tr><th>SSID</th><th>BSSID</th><th>Channel</th><th>Signal</th><th>Encryption</th></tr></thead>
+                                <tbody id="rogueApsBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Signal Mapping Card -->
+                <div class="glass-panel adv-wifi-card">
+                    <div class="adv-wifi-card-header">
+                        <div class="adv-wifi-icon signal-icon"><i class="fa-solid fa-chart-bar"></i></div>
+                        <h3>Signal Mapping</h3>
+                    </div>
+                    <p class="adv-wifi-desc">Analyze channel overlap and signal strength across 2.4GHz channels to find the optimal channel. Works with or without monitor mode.</p>
+                    <div class="adv-wifi-controls">
+                        <div class="input-action" style="max-width:150px">
+                            <input type="number" id="signalDuration" value="15" placeholder="Duration (s)" min="5" max="120">
+                        </div>
+                        <button class="btn btn-outline-teal" onclick="app.startSignalMap()">
+                            <i class="fa-solid fa-play"></i> Map Signals
+                        </button>
+                    </div>
+                    <div id="signalMapResults" class="adv-wifi-results hidden">
+                        <div class="adv-wifi-signal-grid">
+                            <div id="signalChannelBars" class="signal-bars-container"></div>
+                            <div id="signalRecommendation" class="signal-recommendation">
+                                <i class="fa-solid fa-star" style="color:var(--status-safe)"></i>
+                                <span>Recommended Channel: <strong id="signalBestChannel">--</strong></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </main>
     </div>
 
@@ -413,11 +629,6 @@
         style="position:fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 10px;">
     </div>
     <script>
-        // Auth check — redirect to login if not authenticated
-        if (sessionStorage.getItem('pentex_auth') !== 'true') {
-            window.location.href = '/login';
-        }
-
         // ===== Mobile Menu Toggle =====
         function toggleMobileMenu() {
             const sidebar = document.getElementById('sidebar');

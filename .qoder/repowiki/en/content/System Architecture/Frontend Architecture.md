@@ -15,6 +15,15 @@
 - [security_engine.py](file://backend/security_engine.py)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Updated responsive design section to reflect comprehensive mobile-first architecture
+- Added new lightweight mode detection system for low-power devices
+- Enhanced touch screen optimizations with touch-friendly sizing variables
+- Documented new mobile menu system with off-canvas drawer functionality
+- Added performance adaptations for Raspberry Pi and other low-power devices
+- Updated CSS architecture to include touch device specific styles and animations
+
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
@@ -28,10 +37,10 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document describes the frontend architecture of the PentexOne dashboard system. It covers the HTML/CSS/JavaScript implementation of the main dashboard interface, login page, and real-time monitoring components. It explains client-side JavaScript behavior including WebSocket connections, real-time data updates, and Chart.js-based visualizations. It documents static file serving via FastAPI, asset management, and responsive design patterns. It also details user interface components, navigation, interactive elements, WebSocket communication protocols, heartbeat mechanisms, real-time synchronization, styling architecture with CSS organization and theme management, browser compatibility, performance optimization, and user experience considerations.
+This document describes the frontend architecture of the PentexOne dashboard system. It covers the HTML/CSS/JavaScript implementation of the main dashboard interface, login page, and real-time monitoring components. It explains client-side JavaScript behavior including WebSocket connections, real-time data updates, and Chart.js-based visualizations. It documents static file serving via FastAPI, asset management, and comprehensive responsive design patterns with mobile-first architecture. It also details user interface components, navigation, interactive elements, WebSocket communication protocols, heartbeat mechanisms, real-time synchronization, styling architecture with CSS organization and theme management, browser compatibility, performance optimization, and user experience considerations.
 
 ## Project Structure
-The frontend assets are served statically from the backend’s static directory and mounted under the /dashboard route. The main pages are:
+The frontend assets are served statically from the backend's static directory and mounted under the /dashboard route. The main pages are:
 - Login page: /login
 - Dashboard: /dashboard/index.html
 - Static assets: CSS, JS, and HTML files under backend/static/
@@ -55,13 +64,13 @@ DashboardHTML --> StyleCSS
 
 **Diagram sources**
 - [main.py:66-82](file://backend/main.py#L66-L82)
-- [index.html:1-413](file://backend/static/index.html#L1-L413)
-- [login.html:1-209](file://backend/static/login.html#L1-L209)
+- [index.html:1-505](file://backend/static/index.html#L1-L505)
+- [login.html:1-232](file://backend/static/login.html#L1-L232)
 
 **Section sources**
 - [main.py:66-82](file://backend/main.py#L66-L82)
-- [index.html:1-413](file://backend/static/index.html#L1-L413)
-- [login.html:1-209](file://backend/static/login.html#L1-L209)
+- [index.html:1-505](file://backend/static/index.html#L1-L505)
+- [login.html:1-232](file://backend/static/login.html#L1-L232)
 
 ## Core Components
 - HTML pages:
@@ -69,11 +78,16 @@ DashboardHTML --> StyleCSS
   - Dashboard page: main UI with navigation, quick actions, charts, device tables, and AI panels.
 - CSS:
   - Theme variables in :root define dark theme, glass panels, and status colors.
-  - Responsive breakpoints for desktop, tablet, and mobile layouts.
+  - Comprehensive responsive breakpoints for desktop, tablet, and mobile layouts.
+  - Touch-friendly sizing variables (--touch-min: 44px) for optimal mobile interaction.
+  - Lightweight mode detection system for low-power device optimization.
+  - Mobile menu system with off-canvas drawer functionality.
 - JavaScript:
   - Application controller (app.js) orchestrates UI, API calls, WebSocket, charts, and notifications.
   - Real-time updates via WebSocket with heartbeat and event-driven UI refresh.
   - Chart.js renders risk distribution and protocol distribution.
+  - Lightweight mode detection for Raspberry Pi and other low-power devices.
+  - Touch screen optimizations with improved gesture handling.
 - Backend static serving:
   - FastAPI mounts static directory and serves index.html as HTML for SPA-like behavior.
 
@@ -82,21 +96,23 @@ Key responsibilities:
 - Real-time monitoring and live updates (app.js + websocket_manager.py + routers).
 - Data visualization (Chart.js in app.js).
 - Asset delivery and routing (/dashboard, /login, /ws).
+- Responsive design and mobile optimization (CSS + JavaScript).
 
 **Section sources**
-- [login.html:1-209](file://backend/static/login.html#L1-L209)
-- [index.html:1-413](file://backend/static/index.html#L1-L413)
-- [style.css:1-936](file://backend/static/style.css#L1-L936)
-- [app.js:1-1099](file://backend/static/app.js#L1-L1099)
+- [login.html:1-232](file://backend/static/login.html#L1-L232)
+- [index.html:1-505](file://backend/static/index.html#L1-L505)
+- [style.css:1-1442](file://backend/static/style.css#L1-L1442)
+- [app.js:1-1163](file://backend/static/app.js#L1-L1163)
 - [main.py:66-102](file://backend/main.py#L66-L102)
 
 ## Architecture Overview
-The frontend architecture follows a thin client model:
+The frontend architecture follows a thin client model with comprehensive responsive design:
 - The browser loads index.html and app.js.
-- app.js initializes UI, charts, and WebSocket.
+- app.js initializes UI, charts, and WebSocket with lightweight mode detection.
 - On user actions (scan, view switch, settings), app.js calls FastAPI endpoints.
 - Backend routes (routers) process requests, update state, and broadcast events via WebSocket.
-- app.js receives events and updates UI in real time.
+- app.js receives events and updates UI in real time with responsive adaptations.
+- Mobile menu system provides seamless navigation on touch devices.
 
 ```mermaid
 sequenceDiagram
@@ -106,6 +122,7 @@ participant F as "FastAPI main.py"
 participant W as "WebSocket Manager"
 participant R as "Routers (iot.py, access_control.py, ai.py)"
 B->>A : Load index.html
+A->>A : detectLightweightMode() (check for low-power devices)
 A->>A : init() (fetch summary, devices, charts, WS)
 A->>F : GET /reports/summary
 A->>F : GET /iot/devices
@@ -122,6 +139,7 @@ Note over R,W : Background scans trigger broadcasts
 R->>W : broadcast({event : device_found/scan_progress/scan_finished})
 W-->>A : onmessage(handleWebSocketMessage)
 A->>A : update UI (tables, charts, toasts)
+A->>A : apply lightweight mode optimizations
 ```
 
 **Diagram sources**
@@ -149,6 +167,8 @@ A->>A : update UI (tables, charts, toasts)
   - Loads CSS and app.js.
   - Contains navigation, quick actions, charts, device tables, and AI panels.
   - Performs initial auth check and redirects to login if not authenticated.
+  - Implements mobile menu system with off-canvas drawer functionality.
+  - Includes lightweight mode detection for low-power devices.
 
 ```mermaid
 flowchart TD
@@ -157,15 +177,17 @@ CheckAuth --> |true| RenderDashboard["Render Dashboard"]
 CheckAuth --> |false| RedirectLogin["Redirect to /login"]
 RedirectLogin --> LoginRoute["GET /login -> login.html"]
 RenderDashboard --> InitApp["DOMContentLoaded -> app.init()"]
+RenderDashboard --> DetectLightweight["detectLightweightMode()"]
+DetectLightweight --> ApplyOptimizations["Apply lightweight mode optimizations"]
 ```
 
 **Diagram sources**
-- [index.html:406-410](file://backend/static/index.html#L406-L410)
-- [login.html:179-206](file://backend/static/login.html#L179-L206)
+- [index.html:416-420](file://backend/static/index.html#L416-L420)
+- [login.html:203-206](file://backend/static/login.html#L203-L206)
 
 **Section sources**
-- [index.html:1-413](file://backend/static/index.html#L1-L413)
-- [login.html:1-209](file://backend/static/login.html#L1-L209)
+- [index.html:1-505](file://backend/static/index.html#L1-L505)
+- [login.html:1-232](file://backend/static/login.html#L1-L232)
 
 ### Client-Side JavaScript (app.js)
 Responsibilities:
@@ -174,6 +196,7 @@ Responsibilities:
 - Manage toast notifications and progress bars.
 - Poll scan status and update UI accordingly.
 - Integrate with AI endpoints for suggestions and security score.
+- Lightweight mode detection and performance optimizations.
 
 WebSocket handling:
 - Establishes WS connection using wss:// or ws:// depending on protocol.
@@ -184,6 +207,7 @@ WebSocket handling:
 Charts:
 - Doughnut chart for risk distribution.
 - Bar chart for protocol distribution.
+- Responsive chart configurations based on lightweight mode.
 
 ```mermaid
 sequenceDiagram
@@ -209,7 +233,7 @@ App->>App : showToast + hide progress + fetchDevices + fetchSummary + fetchAISug
 - [websocket_manager.py:21-45](file://backend/websocket_manager.py#L21-L45)
 
 **Section sources**
-- [app.js:1-1099](file://backend/static/app.js#L1-L1099)
+- [app.js:1-1163](file://backend/static/app.js#L1-L1163)
 - [main.py:90-101](file://backend/main.py#L90-L101)
 - [websocket_manager.py:7-47](file://backend/websocket_manager.py#L7-L47)
 
@@ -250,10 +274,12 @@ SE --> |No| Wait
 - Risk distribution chart:
   - Doughnut chart showing SAFE, MEDIUM, RISK counts.
   - Updated whenever summary data changes.
+  - Responsive configuration with lightweight mode support.
 - Protocol distribution chart:
   - Bar chart showing counts per protocol.
   - Matter merged into Thread for display.
   - Updated whenever devices change.
+  - Animation disabled in lightweight mode for performance.
 
 ```mermaid
 classDiagram
@@ -284,6 +310,7 @@ App --> Chart : "creates and updates"
 - Navigation:
   - Sidebar with links to Dashboard, RFID, Reports, and Settings.
   - Active state managed by app.switchView().
+  - Mobile menu system with off-canvas drawer for touch devices.
 - Dashboard:
   - Quick scan buttons for Wi-Fi, Bluetooth, Zigbee, Thread, Z-Wave, LoRaWAN.
   - Advanced options with network discovery and nearby SSIDs.
@@ -350,14 +377,14 @@ end
 ```
 
 **Diagram sources**
-- [login.html:179-206](file://backend/static/login.html#L179-L206)
+- [login.html:212-228](file://backend/static/login.html#L212-L228)
 - [main.py:70-74](file://backend/main.py#L70-L74)
-- [index.html:406-410](file://backend/static/index.html#L406-L410)
+- [index.html:416-420](file://backend/static/index.html#L416-L420)
 
 **Section sources**
-- [login.html:179-206](file://backend/static/login.html#L179-L206)
+- [login.html:212-228](file://backend/static/login.html#L212-L228)
 - [main.py:70-74](file://backend/main.py#L70-L74)
-- [index.html:406-410](file://backend/static/index.html#L406-L410)
+- [index.html:416-420](file://backend/static/index.html#L416-L420)
 
 ### Static File Serving and Asset Management
 - FastAPI mounts the static directory under /dashboard with HTML=True so index.html is served as HTML.
@@ -383,38 +410,68 @@ Mount --> JS["app.js"]
 - [main.py:66-68](file://backend/main.py#L66-L68)
 - [index.html:12-14](file://backend/static/index.html#L12-L14)
 
-### Responsive Design Patterns
-- CSS media queries adapt layout for:
-  - Desktop: full dashboard layout with sidebar and two-column device details.
-  - Tablet: stacked layout for dashboard components.
-  - Mobile: compact sidebar with icons-only, stacked charts and panels, and full-width components.
+### Responsive Design Patterns and Mobile-First Architecture
+**Updated** Comprehensive responsive design implementation with mobile-first approach:
+
+- Touch-friendly sizing variables:
+  - --touch-min: 44px minimum touch target size for optimal mobile interaction.
+  - Consistent touch targets across all interactive elements.
+- Mobile menu system:
+  - Off-canvas drawer with hamburger menu button.
+  - Sidebar transforms to fixed position on mobile devices.
+  - Overlay background for improved user experience.
+- Lightweight mode detection:
+  - Automatic detection of low-power devices (Raspberry Pi, embedded systems).
+  - Reduced animations and visual effects for better performance.
+  - Disabled expensive background effects and backdrop filters.
+- Multi-tier responsive breakpoints:
+  - Desktop: 1400px+ with full dashboard layout.
+  - Tablet: 1024px-1400px with stacked components.
+  - Mobile: 768px-1024px with off-canvas navigation.
+  - Phone landscape: 480px-768px with optimized layout.
+  - Very small screens: 360px-480px with single-column stats.
 
 ```mermaid
 flowchart TD
-Desktop[">1400px"] --> FullLayout["Full layout"]
-Tablet["<=1400px"] --> StackLayout["Stacked components"]
-Mobile["<=768px"] --> CompactSidebar["Compact sidebar"]
-CompactSidebar --> MobileLayout["Mobile-first layout"]
+TouchDetection["Touch Device Detection"] --> TouchTargets["Apply --touch-min sizing"]
+TouchDetection --> MobileMenu["Enable Mobile Menu System"]
+TouchDetection --> LightweightMode["Detect Low-Power Devices"]
+LightweightMode --> DisableAnimations["Disable Expensive Animations"]
+LightweightMode --> ReduceEffects["Remove Backdrop Filters"]
+MobileMenu --> OffCanvas["Off-Canvas Drawer"]
+OffCanvas --> Overlay["Sidebar Overlay"]
+TouchTargets --> ConsistentSizes["Consistent Touch Targets"]
 ```
 
 **Diagram sources**
-- [style.css:843-919](file://backend/static/style.css#L843-L919)
+- [style.css:20-27](file://backend/static/style.css#L20-L27)
+- [style.css:62-100](file://backend/static/style.css#L62-L100)
+- [style.css:1272-1312](file://backend/static/style.css#L1272-L1312)
+- [index.html:463-490](file://backend/static/index.html#L463-L490)
 
 **Section sources**
-- [style.css:843-919](file://backend/static/style.css#L843-L919)
+- [style.css:20-27](file://backend/static/style.css#L20-L27)
+- [style.css:62-100](file://backend/static/style.css#L62-L100)
+- [style.css:1272-1312](file://backend/static/style.css#L1272-L1312)
+- [index.html:463-490](file://backend/static/index.html#L463-L490)
 
 ### Styling Architecture and Theme Management
+**Updated** Enhanced styling architecture with responsive design:
+
 - CSS custom properties in :root define:
   - Backgrounds, borders, and text colors.
   - Accent colors for blue, purple, orange.
   - Status colors for safe, medium, risk.
   - Glass panel backdrop blur and Inter font family.
+  - Touch-friendly sizing variables (--touch-min: 44px).
 - Component styles:
   - Glass panels with backdrop-filter and border.
   - Buttons with multiple variants (primary, outline, danger, etc.).
   - Charts with custom legends and responsive containers.
   - Toast notifications with animations.
   - Device badges and vulnerability items.
+  - Mobile menu system with off-canvas drawer.
+  - Lightweight mode optimizations for low-power devices.
 
 ```mermaid
 classDiagram
@@ -426,6 +483,7 @@ class Theme {
 --status-safe
 --status-medium
 --status-risk
+--touch-min
 }
 class Components {
 .glass-panel
@@ -433,12 +491,16 @@ class Components {
 .chart-panel
 .toast-msg
 .badge
+.mobile-menu-toggle
+.sidebar
+.sidebar-overlay
 }
 Theme <.. Components : "uses CSS variables"
 ```
 
 **Diagram sources**
 - [style.css:1-19](file://backend/static/style.css#L1-L19)
+- [style.css:20-27](file://backend/static/style.css#L20-L27)
 - [style.css:164-171](file://backend/static/style.css#L164-L171)
 - [style.css:296-357](file://backend/static/style.css#L296-L357)
 - [style.css:359-429](file://backend/static/style.css#L359-L429)
@@ -446,6 +508,7 @@ Theme <.. Components : "uses CSS variables"
 
 **Section sources**
 - [style.css:1-19](file://backend/static/style.css#L1-L19)
+- [style.css:20-27](file://backend/static/style.css#L20-L27)
 - [style.css:164-171](file://backend/static/style.css#L164-L171)
 - [style.css:296-357](file://backend/static/style.css#L296-L357)
 - [style.css:359-429](file://backend/static/style.css#L359-L429)
@@ -499,6 +562,7 @@ App->>App : setTimeout(initWebSocket, 5000)
 - Client updates:
   - app.js polls scan status until completion, then refreshes devices and summaries.
   - On WS events, app.js updates UI immediately.
+  - Lightweight mode adjusts refresh intervals for better performance.
 
 ```mermaid
 sequenceDiagram
@@ -532,15 +596,105 @@ App->>App : showToast + hide progress + fetchDevices + fetchSummary + fetchAISug
 - [iot.py:291-413](file://backend/routers/iot.py#L291-L413)
 - [websocket_manager.py:21-45](file://backend/websocket_manager.py#L21-L45)
 
+### Lightweight Mode Detection and Performance Optimizations
+**New** Comprehensive performance adaptations for low-power devices:
+
+- Automatic detection criteria:
+  - hardwareConcurrency <= 4 (Raspberry Pi typical)
+  - ARM architecture detection
+  - deviceMemory <= 4GB
+  - prefers-reduced-motion user preference
+  - Small kiosk mode detection (<=1024x768 Linux)
+- Performance optimizations:
+  - Disabled expensive animations and transitions.
+  - Removed backdrop-filter effects for glass panels.
+  - Reduced chart animations and visual effects.
+  - Adjusted auto-refresh intervals (10s vs 5s).
+  - Simplified background effects and gradients.
+- Manual override capability:
+  - URL parameter ?lightweight for forced activation.
+  - Settings-based toggling for user control.
+
+```mermaid
+flowchart TD
+Detection["Device Detection"] --> LowEnd{"hardwareConcurrency <= 4?"}
+LowEnd --> |Yes| EnableLightweight["Enable Lightweight Mode"]
+LowEnd --> |No| CheckARM{"ARM Architecture?"}
+CheckARM --> |Yes| EnableLightweight
+CheckARM --> |No| CheckMemory{"deviceMemory <= 4GB?"}
+CheckMemory --> |Yes| EnableLightweight
+CheckMemory --> |No| CheckMotion{"prefers-reduced-motion?"}
+CheckMotion --> |Yes| EnableLightweight
+CheckMotion --> |No| CheckKiosk{"Small Kiosk Mode?"}
+CheckKiosk --> |Yes| EnableLightweight
+CheckKiosk --> |No| NormalMode["Normal Mode"]
+EnableLightweight --> ApplyOptimizations["Apply Performance Optimizations"]
+```
+
+**Diagram sources**
+- [index.html:463-490](file://backend/static/index.html#L463-L490)
+- [app.js:31-43](file://backend/static/app.js#L31-L43)
+- [style.css:1264-1312](file://backend/static/style.css#L1264-L1312)
+
+**Section sources**
+- [index.html:463-490](file://backend/static/index.html#L463-L490)
+- [app.js:31-43](file://backend/static/app.js#L31-L43)
+- [style.css:1264-1312](file://backend/static/style.css#L1264-L1312)
+
+### Touch Screen Optimizations and Mobile Menu System
+**New** Enhanced touch interaction and navigation:
+
+- Touch-friendly interface:
+  - Minimum 44px touch targets for all interactive elements.
+  - Improved tap highlighting and active states.
+  - Gesture-friendly button sizing and spacing.
+- Mobile menu system:
+  - Hamburger menu button with fixed positioning.
+  - Off-canvas sidebar with smooth transitions.
+  - Overlay background for improved user experience.
+  - Auto-close on navigation item click.
+  - Responsive sidebar positioning and sizing.
+- Touch device specific styles:
+  - Coarse pointer detection for mobile optimization.
+  - Enlarged form controls and inputs.
+  - Custom scrollbar styling for touch devices.
+  - Hover effects disabled for touch devices.
+
+```mermaid
+flowchart TD
+TouchDetection["Coarse Pointer Detection"] --> EnlargeInputs["Enlarge Form Inputs"]
+TouchDetection --> DisableHover["Disable Hover Effects"]
+TouchDetection --> CustomScroll["Custom Scrollbar Styling"]
+MobileMenu["Mobile Menu System"] --> HamburgerButton["Fixed Hamburger Button"]
+MobileMenu --> OffCanvasSidebar["Off-Canvas Sidebar"]
+MobileMenu --> OverlayBackground["Overlay Background"]
+EnlargeInputs --> TouchTargets["44px Minimum Touch Targets"]
+DisableHover --> ActiveStates["Enhanced Active States"]
+CustomScroll --> TouchFriendly["Touch-Friendly Scrollbars"]
+```
+
+**Diagram sources**
+- [style.css:1317-1374](file://backend/static/style.css#L1317-L1374)
+- [style.css:62-100](file://backend/static/style.css#L62-L100)
+- [index.html:421-461](file://backend/static/index.html#L421-L461)
+
+**Section sources**
+- [style.css:1317-1374](file://backend/static/style.css#L1317-L1374)
+- [style.css:62-100](file://backend/static/style.css#L62-L100)
+- [index.html:421-461](file://backend/static/index.html#L421-L461)
+
 ### Browser Compatibility and User Experience
 - Compatibility:
   - Uses modern APIs (fetch, WebSocket, Chart.js, CSS variables).
-  - Responsive design ensures usability across screen sizes.
+  - Comprehensive responsive design ensures usability across screen sizes.
+  - Lightweight mode provides fallback for older devices.
+  - Touch device optimizations for mobile Safari and Android browsers.
 - UX:
   - Toast notifications for scan progress, errors, and critical alerts.
   - Animated progress bars and smooth transitions.
   - Immediate feedback on user actions (scans, settings, exports).
   - Dark theme with glass panels enhances readability and reduces eye strain.
+  - Mobile-first design ensures optimal experience on all devices.
 
 [No sources needed since this section provides general guidance]
 
@@ -564,8 +718,8 @@ Routers --> Models["models.py"]
 ```
 
 **Diagram sources**
-- [index.html:1-413](file://backend/static/index.html#L1-L413)
-- [app.js:1-1099](file://backend/static/app.js#L1-L1099)
+- [index.html:1-505](file://backend/static/index.html#L1-L505)
+- [app.js:1-1163](file://backend/static/app.js#L1-L1163)
 - [main.py:1-106](file://backend/main.py#L1-L106)
 - [iot.py:1-880](file://backend/routers/iot.py#L1-L880)
 - [access_control.py:1-95](file://backend/routers/access_control.py#L1-L95)
@@ -574,8 +728,8 @@ Routers --> Models["models.py"]
 - [models.py:1-71](file://backend/models.py#L1-L71)
 
 **Section sources**
-- [index.html:1-413](file://backend/static/index.html#L1-L413)
-- [app.js:1-1099](file://backend/static/app.js#L1-L1099)
+- [index.html:1-505](file://backend/static/index.html#L1-L505)
+- [app.js:1-1163](file://backend/static/app.js#L1-L1163)
 - [main.py:1-106](file://backend/main.py#L1-L106)
 - [iot.py:1-880](file://backend/routers/iot.py#L1-L880)
 - [access_control.py:1-95](file://backend/routers/access_control.py#L1-L95)
@@ -584,21 +738,34 @@ Routers --> Models["models.py"]
 - [models.py:1-71](file://backend/models.py#L1-L71)
 
 ## Performance Considerations
+**Updated** Enhanced performance optimizations:
+
+- Lightweight mode detection:
+  - Automatic detection of low-power devices (Raspberry Pi, embedded systems).
+  - Reduced animations and visual effects for better performance.
+  - Adjusted auto-refresh intervals (10s vs 5s) for resource-constrained devices.
 - Minimize DOM updates:
   - Batch UI updates after WebSocket events.
   - Use requestAnimationFrame for smoother animations.
 - Efficient chart updates:
   - Update chart datasets instead of recreating charts.
   - Debounce frequent updates (e.g., scan progress).
+  - Disable chart animations in lightweight mode.
 - Network efficiency:
   - Use polling only when necessary; rely on WebSocket events.
   - Cache frequently accessed data (e.g., settings).
-- Rendering:
+- Rendering optimizations:
   - Use CSS transforms for animations.
   - Avoid layout thrashing by batching DOM reads/writes.
+  - Remove expensive backdrop-filter effects in lightweight mode.
+- Touch device optimizations:
+  - Larger touch targets (44px minimum) improve usability.
+  - Gesture-friendly button sizing and spacing.
+  - Custom scrollbar styling for touch devices.
 - Asset delivery:
   - Serve static assets via CDN or compressed bundles.
   - Lazy-load non-critical resources.
+  - Optimize images and fonts for mobile networks.
 
 [No sources needed since this section provides general guidance]
 
@@ -613,21 +780,31 @@ Common issues and resolutions:
 - Charts not rendering:
   - Ensure Chart.js CDN is accessible.
   - Check canvas element availability and container sizing.
+  - Verify lightweight mode isn't disabling chart animations.
 - Scan progress stuck:
   - Verify router endpoints are reachable.
   - Confirm background tasks are running and broadcasting events.
 - Hardware detection:
   - Confirm dongle drivers are installed and accessible.
   - Check permissions for serial devices.
+- Mobile menu not working:
+  - Verify JavaScript is enabled.
+  - Check CSS media queries for mobile breakpoints.
+  - Ensure touch device detection is functioning.
+- Lightweight mode issues:
+  - Check device detection criteria.
+  - Verify CSS classes are being applied correctly.
+  - Test manual lightweight mode activation via URL parameter.
 
 **Section sources**
 - [main.py:23-32](file://backend/main.py#L23-L32)
 - [main.py:90-101](file://backend/main.py#L90-L101)
 - [app.js:113-126](file://backend/static/app.js#L113-L126)
 - [iot.py:291-413](file://backend/routers/iot.py#L291-L413)
+- [index.html:463-490](file://backend/static/index.html#L463-L490)
 
 ## Conclusion
-The PentexOne frontend employs a clean separation of concerns: FastAPI serves static assets and exposes REST endpoints, while app.js manages the UI, WebSocket, and real-time updates. The architecture emphasizes responsive design, real-time monitoring, and a cohesive dark theme with glass panels. Robust WebSocket heartbeats and event-driven UI updates provide a smooth user experience. With careful attention to performance and accessibility, the system delivers a powerful, real-time dashboard for IoT security auditing.
+The PentexOne frontend employs a clean separation of concerns with comprehensive responsive design: FastAPI serves static assets and exposes REST endpoints, while app.js manages the UI, WebSocket, and real-time updates with mobile-first architecture. The architecture emphasizes responsive design, real-time monitoring, lightweight mode optimization for low-power devices, and a cohesive dark theme with glass panels. Robust WebSocket heartbeats and event-driven UI updates provide a smooth user experience across desktop, tablet, and mobile devices. With careful attention to performance and accessibility, the system delivers a powerful, real-time dashboard for IoT security auditing with optimal user experience on all device types.
 
 [No sources needed since this section summarizes without analyzing specific files]
 

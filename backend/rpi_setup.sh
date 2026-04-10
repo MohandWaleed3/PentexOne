@@ -68,8 +68,12 @@ apt-get install -y \
     i2c-tools \
     wireless-tools \
     rfkill \
-    iw
+    iw \
+    aircrack-ng \
+    avahi-utils \
+    nbtscan
 # Note: Removed 'systemctl' - it's not a package, it's a systemd utility
+# Added: aircrack-ng (for airmon-ng/monitor mode), avahi-utils (for mDNS), nbtscan (for NetBIOS)
 # Added: i2c-tools, wireless-tools, rfkill, iw for RPi 5 hardware support
 echo ""
 

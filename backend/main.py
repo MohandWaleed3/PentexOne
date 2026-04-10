@@ -1,11 +1,17 @@
-from fastapi import FastAPI, WebSocket, HTTPException
+from fastapi import FastAPI, WebSocket, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, HTMLResponse, FileResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, FileResponse, JSONResponse
 from pydantic import BaseModel
 import asyncio
 import os
 import logging
+import hashlib
+import hmac
+import secrets
+import time
+import base64
+from typing import Optional
 
 # Load .env file if it exists
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -31,10 +37,7 @@ from models import SettingUpdate
 init_db()
 
 # ===================== AUTH =====================
-# SECURITY: In production, use environment variables or a secure vault
-VALID_USERNAME = os.getenv("PENTEX_USERNAME", "admin")
-VALID_PASSWORD = os.getenv("PENTEX_PASSWORD", "pentex2024")  # Change this!
-
+# Auth removed as per user request
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -42,9 +45,21 @@ class LoginRequest(BaseModel):
 
 app = FastAPI(title="Pentex One API", description="Backend API for Pentex One security testing device.")
 
+# CORS: Restrict to specific origins (not wildcard)
+# In production, set PENTEX_CORS_ORIGINS=https://yourdomain.com,http://192.168.1.100:8000
+_cors_origins_str = os.getenv("PENTEX_CORS_ORIGINS", "")
+ALLOWED_ORIGINS = [o.strip() for o in _cors_origins_str.split(",") if o.strip()]
+if not ALLOWED_ORIGINS:
+    # Default: allow localhost and LAN access for development
+    ALLOWED_ORIGINS = [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://0.0.0.0:8000",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,6 +70,10 @@ app.include_router(access_control.router)
 app.include_router(wifi_bt.router)
 app.include_router(ai.router)
 app.include_router(reports.router)
+
+# ===================== AUTH MIDDLEWARE =====================
+# Auth middleware removed
+
 
 @app.get("/settings")
 def get_settings(db: Session = Depends(get_db)):
@@ -76,25 +95,21 @@ def update_settings(updates: SettingUpdate, db: Session = Depends(get_db)):
 os.makedirs("static", exist_ok=True)
 app.mount("/dashboard", StaticFiles(directory="static", html=True), name="static")
 
-@app.post("/auth/login")
-def login(req: LoginRequest):
-    if req.username == VALID_USERNAME and req.password == VALID_PASSWORD:
-        return {"status": "ok"}
-    raise HTTPException(status_code=401, detail="Invalid credentials")
-
-@app.get("/login")
-def login_page():
-    return FileResponse("static/login.html")
-
 @app.get("/")
 def read_root():
-    return RedirectResponse(url="/login")
+    return RedirectResponse(url="/dashboard/index.html")
 
 
 from websocket_manager import manager
 
 # Export manager to other routers
 app.manager = manager
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Auth disabled for development - allow all requests"""
+    # Auth temporarily disabled - all paths public
+    return await call_next(request)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

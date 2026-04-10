@@ -1,5 +1,6 @@
 import asyncio
 import socket
+import platform
 import nmap
 import subprocess
 import serial
@@ -17,11 +18,146 @@ import logging
 # Setup logging
 logger = logging.getLogger(__name__)
 
-from database import get_db, Device, Vulnerability
+import time
+
+from database import get_db, Device, Vulnerability, SessionLocal
 from models import DeviceOut, ScanRequest, ScanStatus
 from security_engine import calculate_risk
 
 router = APIRouter(prefix="/iot", tags=["IoT Security"])
+
+# ============================================================================
+# ENHANCED HOSTNAME & VENDOR DETECTION
+# ============================================================================
+
+def get_hostname_enhanced(ip_address: str) -> str:
+    """
+    Enhanced hostname detection using multiple methods:
+    1. Reverse DNS lookup
+    2. mDNS/Bonjour (avahi-resolve)
+    3. NetBIOS (nbtscan)
+    4. nmblookup for Windows devices
+    Returns hostname or "Unknown"
+    """
+    hostname = None
+    
+    # Method 1: Standard reverse DNS lookup
+    try:
+        hostname, _, _ = socket.gethostbyaddr(ip_address)
+        if hostname and hostname != ip_address:
+            hostname = hostname.split('.')[0] if '.' in hostname else hostname
+            logger.info(f"Reverse DNS found for {ip_address}: {hostname}")
+            return hostname
+    except (socket.herror, socket.gaierror) as e:
+        logger.debug(f"Reverse DNS failed for {ip_address}: {e}")
+    
+    # Method 2: mDNS/Avahi resolution (for .local hostnames)
+    try:
+        result = subprocess.run(
+            ['avahi-resolve-address', ip_address],
+            capture_output=True,
+            text=True,
+            timeout=3
+        )
+        if result.returncode == 0:
+            parts = result.stdout.strip().split('\t')
+            if len(parts) >= 2:
+                hostname = parts[1].split('.')[0]
+                logger.info(f"mDNS resolved {ip_address} to {hostname}")
+                return hostname
+    except FileNotFoundError:
+        logger.debug("avahi-resolve-address not available")
+    except Exception as e:
+        logger.debug(f"mDNS lookup failed for {ip_address}: {e}")
+    
+    # Method 3: MacOS dns-sugar (for macOS systems)
+    if platform.system() == "Darwin":
+        try:
+            result = subprocess.run(
+                ['dns-sd', '-G', 'v4', ip_address],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if ip_address in line:
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            hostname = parts[-1].split('.')[0]
+                            logger.info(f"dns-sd found {ip_address}: {hostname}")
+                            return hostname
+        except Exception as e:
+            logger.debug(f"dns-sd lookup failed: {e}")
+    
+    # Method 4: NetBIOS lookup (for Windows devices)
+    try:
+        result = subprocess.run(
+            ['nmblookup', '-A', ip_address],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            for line in result.stdout.split('\n'):
+                if '<00>' in line and 'ACTIVE' in line:
+                    match = re.search(r'<00>\s+.*?\s+(\S+)', line)
+                    if match:
+                        hostname = match.group(1)
+                        logger.info(f"NetBIOS found {ip_address}: {hostname}")
+                        return hostname
+    except FileNotFoundError:
+        logger.debug("nmblookup not available")
+    except Exception as e:
+        logger.debug(f"NetBIOS lookup failed for {ip_address}: {e}")
+    
+    return "Unknown"
+
+
+def get_vendor_from_mac(mac_address: str) -> str:
+    """Get vendor from MAC OUI - simplified database with common vendors"""
+    if not mac_address or mac_address == "Unknown":
+        return "Unknown"
+    
+    mac = mac_address.upper().replace('-', ':').replace('.', ':')
+    parts = mac.split(':')
+    if len(parts) < 3:
+        return "Unknown"
+    
+    oui = ':'.join(parts[:3])
+    
+    # Essential vendors database (single source of truth)
+    vendors = {
+        # Major Vendors
+        '00:00:0C': 'Cisco', '00:00:5E': 'VMware', '00:01:02': 'Apple',
+        '00:03:47': 'Intel', '00:04:5A': 'HP', '00:05:5D': 'Dell',
+        '00:07:E9': 'Belkin', '00:0A:F6': 'TP-Link', '00:0C:29': 'VMware',
+        '00:11:2F': 'Dell', '00:13:02': 'Samsung', '00:14:2F': 'Toshiba',
+        '00:15:58': 'Amazon', '00:16:EA': 'Sony', '00:17:88': 'Philips Hue',
+        '00:17:9A': 'LG', '00:18:4D': 'Huawei', '00:19:7E': 'Lenovo',
+        '00:1A:11': 'Google', '00:1B:44': 'Intel', '00:1C:BF': 'Apple',
+        '00:1D:7E': 'Microsoft', '00:1E:68': 'Asus', '00:1F:E2': 'Netgear',
+        '00:21:5A': 'Linksys', '00:22:6B': 'LG', '00:23:CD': 'Honeywell',
+        '00:25:00': 'Apple', '00:26:AB': 'Qualcomm', '00:50:56': 'VMware',
+        '00:AA:70': 'Espressif', '00:AF:C8': 'Amazon', '00:E0:4C': 'Realtek',
+        '00:F6:8F': 'Samsung', '04:26:65': 'Samsung', '08:00:07': 'Apple',
+        '10:40:F3': 'Apple', '18:B4:30': 'Nest Labs', '24:0A:C4': 'Espressif',
+        '3C:5A:B4': 'Google', '58:D9:D5': 'TP-Link', '64:66:B3': 'TP-Link',
+        '68:72:51': 'Ubiquiti', '74:DA:38': 'TP-Link', '84:D8:1B': 'TP-Link',
+        '90:9A:4A': 'TP-Link', '94:B2:CB': 'Apple', 'A4:CF:12': 'Espressif',
+        'AC:15:A2': 'TP-Link', 'B8:27:EB': 'Raspberry Pi', 'BC:46:99': 'TP-Link',
+        'C4:E9:84': 'TP-Link', 'DC:A6:32': 'Raspberry Pi', 'E4:5F:01': 'Raspberry Pi',
+        'E4:F5:DB': 'TP-Link', 'EC:41:18': 'TP-Link', 'F0:9F:C2': 'Ubiquiti',
+        # Additional IoT / Smart Home
+        '00:12:4B': 'Philips', '00:1F:E4': 'Xiaomi', '00:27:F8': 'Ubiquiti',
+        '00:2A:10': 'Ecobee', '00:30:66': 'Siemens', '00:50:C2': 'IEEE 802.15.4',
+        '00:66:9B': 'Sonos', '00:71:A2': 'Ring', '00:86:A0': 'Nest',
+        '00:9D:6B': 'Sonoff', '00:BB:3A': 'Fitbit', '00:CC:6E': 'Crestron',
+        '00:DD:1F': 'Bose', '00:EE:BD': 'iRobot',
+    }
+    
+    return vendors.get(oui, "Unknown")
+
 
 # Hardware detection helpers
 def get_mac_from_arp_cache(ip_address: str) -> tuple:
@@ -40,135 +176,7 @@ def get_mac_from_arp_cache(ip_address: str) -> tuple:
                         mac = parts[3]
                         if mac != '00:00:00:00:00:00':
                             # Try to get vendor from MAC OUI
-                            vendor = "Unknown"
-                            if len(mac.split(':')) >= 3:
-                                oui = mac[:8].upper()
-                                # Extended OUI lookup (common vendors)
-                                oui_db = {
-                                    # Major Vendors
-                                    'AA:BB:CC': 'Generic',
-                                    '00:00:00': 'Xerox',
-                                    '00:00:5E': 'IANA',
-                                    '00:01:02': 'Apple',
-                                    '00:03:47': 'Cisco',
-                                    '00:04:5A': 'HP',
-                                    '00:05:5D': 'Dell',
-                                    '00:07:E9': 'Belkin',
-                                    '00:0A:F6': 'TP-Link',
-                                    '00:0C:29': 'VMware',
-                                    '00:11:2F': 'Dell',
-                                    '00:13:02': 'Samsung',
-                                    '00:14:2F': 'Toshiba',
-                                    '00:15:58': 'Amazon',
-                                    '00:16:EA': 'Sony',
-                                    '00:17:9A': 'LG',
-                                    '00:18:4D': 'Huawei',
-                                    '00:19:7E': 'Lenovo',
-                                    '00:1A:2B': 'Cisco',
-                                    '00:1B:44': 'Intel',
-                                    '00:1C:BF': 'Google',
-                                    '00:1D:7E': 'Microsoft',
-                                    '00:1E:68': 'Asus',
-                                    '00:1F:E2': 'Netgear',
-                                    '00:21:5A': 'Linksys',
-                                    '00:22:6B': 'LG',
-                                    '00:23:CD': 'Honeywell',
-                                    '00:24:D2': 'Alps',
-                                    '00:25:00': 'Realtek',
-                                    '00:26:AB': 'Qualcomm',
-                                    '00:27:19': 'Panasonic',
-                                    '00:50:56': 'VMware',
-                                    '00:60:2F': 'Cisco',
-                                    '00:80:C2': 'Advanced Micro Devices',
-                                    '00:A0:C9': 'Intel',
-                                    '00:B0:D0': 'Broadcom',
-                                    '00:C0:CA': 'Sanyo',
-                                    '00:D0:59': 'AVM',
-                                    '00:E0:4C': 'Realtek',
-                                    '00:E3:B2': 'Samsung',
-                                    '00:EC:71': 'Nokia',
-                                    '00:F4:6F': 'LGE',
-                                    
-                                    # Raspberry Pi
-                                    'B8:27:EB': 'Raspberry Pi Foundation',
-                                    'DC:A6:32': 'Intel',
-                                    'E4:5F:01': 'Samsung',
-                                    
-                                    # Apple
-                                    'F0:18:98': 'Apple',
-                                    '00:1C:B3': 'Apple',
-                                    '00:1E:C2': 'Apple',
-                                    '00:21:E9': 'Apple',
-                                    '00:23:12': 'Apple',
-                                    '00:25:00': 'Apple',
-                                    '00:26:08': 'Apple',
-                                    '00:26:B0': 'Apple',
-                                    '00:26:BB': 'Apple',
-                                    '00:26:DF': 'Apple',
-                                    '00:27:22': 'Apple',
-                                    '00:56:CB': 'Apple',
-                                    '00:61:71': 'Apple',
-                                    '00:71:CC': 'Apple',
-                                    '00:7E:66': 'Apple',
-                                    '00:7F:17': 'Apple',
-                                    '00:88:65': 'Apple',
-                                    '00:8E:87': 'Apple',
-                                    '00:9D:8B': 'Apple',
-                                    '00:A2:DA': 'Apple',
-                                    '00:A6:DE': 'Apple',
-                                    '00:AC:87': 'Apple',
-                                    '00:B4:F5': 'Apple',
-                                    '00:C6:10': 'Apple',
-                                    '00:CD:FE': 'Apple',
-                                    '00:D1:21': 'Apple',
-                                    '00:E1:2A': 'Apple',
-                                    '00:E6:33': 'Apple',
-                                    '00:F8:1C': 'Apple',
-                                    '00:FB:BC': 'Apple',
-                                    
-                                    # Android/Smartphones
-                                    '00:1A:11': 'Samsung',
-                                    '00:1B:9E': 'Samsung',
-                                    '00:1E:7D': 'Samsung',
-                                    '00:21:4C': 'Samsung',
-                                    '00:23:39': 'Samsung',
-                                    '00:24:54': 'Samsung',
-                                    '00:26:37': 'Samsung',
-                                    '00:26:86': 'Samsung',
-                                    '00:26:ED': 'Samsung',
-                                    '00:27:17': 'Samsung',
-                                    '00:5C:A2': 'Samsung',
-                                    '00:7C:B8': 'Samsung',
-                                    '00:9B:9C': 'Samsung',
-                                    '00:9E:C8': 'Samsung',
-                                    '00:A2:EE': 'Samsung',
-                                    '00:B3:4C': 'Samsung',
-                                    '00:C3:DD': 'Samsung',
-                                    '00:D6:3B': 'Samsung',
-                                    '00:E0:91': 'Samsung',
-                                    '00:F6:8F': 'Samsung',
-                                    
-                                    # IoT Vendors
-                                    '00:12:4B': 'Philips',
-                                    '00:17:88': 'Signify (Philips Hue)',
-                                    '00:1F:E4': 'Xiaomi',
-                                    '00:27:F8': 'Ubiquiti',
-                                    '00:2A:10': 'Ecobee',
-                                    '00:30:66': 'Siemens',
-                                    '00:50:C2': 'IEEE 802.15.4',
-                                    '00:66:9B': 'Sonos',
-                                    '00:71:A2': 'Ring',
-                                    '00:86:A0': 'Nest',
-                                    '00:9D:6B': 'Sonoff',
-                                    '00:AA:70': 'Espressif',
-                                    '00:AF:C8': 'Amazon',
-                                    '00:BB:3A': 'Fitbit',
-                                    '00:CC:6E': 'Crestron',
-                                    '00:DD:1F': 'Bose',
-                                    '00:EE:BD': 'iRobot',
-                                    '00:FF:FF': 'Generic IoT'
-                                }
-                                vendor = oui_db.get(oui, "Unknown")
+                            vendor = get_vendor_from_mac(mac)
                             return (mac, vendor)
         
         # Fallback: use arp command
@@ -459,12 +467,13 @@ async def start_wifi_scan(request: ScanRequest, background_tasks: BackgroundTask
     if scan_state["running"]:
         return ScanStatus(status="busy", message="فحص آخر جارٍ بالفعل", devices_found=scan_state["devices_found"])
 
-    background_tasks.add_task(run_nmap_scan, request.network, db)
+    background_tasks.add_task(run_nmap_scan, request.network)
     return ScanStatus(status="started", message=f"بدأ فحص الشبكة: {request.network}", devices_found=0)
 
 
-def run_nmap_scan(network: str, db: Session):
+def run_nmap_scan(network: str):
     """يشغل Nmap في background ويحفظ النتائج في قاعدة البيانات"""
+    db = SessionLocal()
     scan_state["running"] = True
     scan_state["progress"] = 0
     scan_state["devices_found"] = 0
@@ -482,10 +491,10 @@ def run_nmap_scan(network: str, db: Session):
         # Use ARP scan for local network discovery (more reliable)
         try:
             result = subprocess.run(
-                ['arp-scan', '--localnet', '--quiet'],
+                ['arp-scan', '--localnet', '--quiet', '--retry=2'],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=15
             )
             
             arp_devices = {}
@@ -527,7 +536,7 @@ def run_nmap_scan(network: str, db: Session):
         batch_scan = nmap.PortScanner()
         batch_scan_args = "-sV -T4 --open -p 21,22,23,25,53,80,443,554,1900,2323,4444,5555,8080,8888,9000"
         try:
-            batch_scan.scan(hosts=network, arguments=batch_scan_args, timeout=120)
+            batch_scan.scan(hosts=network, arguments=batch_scan_args, timeout=45)
             logger.info(f"Batch service scan completed for {network}")
         except Exception as e:
             logger.warning(f"Batch scan failed, falling back to individual scans: {e}")
@@ -563,8 +572,11 @@ def run_nmap_scan(network: str, db: Session):
                     vendor = nm[host]["vendor"].get(mac, "Unknown")
                     logger.info(f"MAC from Nmap: {host} - {mac} ({vendor})")
             
-            # Extract hostname
+            # Extract hostname using enhanced detection
             hostname = nm[host].hostname() or "Unknown"
+            if hostname == "Unknown":
+                # Try enhanced hostname detection (reverse DNS, mDNS, NetBIOS)
+                hostname = get_hostname_enhanced(host)
             
             # Get service info from batch scan
             open_ports = []
@@ -577,7 +589,7 @@ def run_nmap_scan(network: str, db: Session):
                         if batch_scan[host][proto][port]["state"] == "open":
                             open_ports.append(port)
                 
-                # Try to get hostname from batch scan
+                # Try to get hostname from batch scan if still unknown
                 if hostname == "Unknown" and len(batch_scan[host].hostname()) > 0:
                     hostname = batch_scan[host].hostname()
                 
@@ -590,7 +602,7 @@ def run_nmap_scan(network: str, db: Session):
                 # Limit to avoid memory issues on RPi 5
                 try:
                     nm_host = nmap.PortScanner()
-                    nm_host.scan(hosts=host, arguments="-sV -T4 --open -p 21,22,23,25,53,80,443,554,1900,2323,4444,5555,8080,8888,9000", timeout=60)
+                    nm_host.scan(hosts=host, arguments="-sV -T4 --open -p 21,22,23,25,53,80,443,8080", timeout=20)
                     if host in nm_host.all_hosts():
                         if hostname == "Unknown" and len(nm_host[host].hostname()) > 0:
                             hostname = nm_host[host].hostname()
@@ -602,6 +614,10 @@ def run_nmap_scan(network: str, db: Session):
                             os_guess = nm_host[host]["osmatch"][0].get("name", "Unknown")
                 except Exception as e:
                     logger.warning(f"Individual scan failed for {host}: {e}")
+            
+            # Enhanced vendor detection from MAC if still unknown
+            if vendor == "Unknown" and mac != "Unknown":
+                vendor = get_vendor_from_mac(mac)
             
             # تقييم الأمان
             risk_result = calculate_risk(open_ports, "Wi-Fi")
@@ -689,19 +705,21 @@ def run_nmap_scan(network: str, db: Session):
         manager.broadcast({"event": "scan_error", "message": str(e)})
     finally:
         scan_state["running"] = False
+        db.close()
 
 
 # ────────────────────────────────────────────────────────────
 # 2. فحص أجهزة Matter (mDNS Discovery)
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/matter", response_model=ScanStatus)
-async def start_matter_scan(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    background_tasks.add_task(run_matter_scan, db)
+async def start_matter_scan(background_tasks: BackgroundTasks):
+    background_tasks.add_task(run_matter_scan)
     return ScanStatus(status="started", message="جارٍ البحث عن أجهزة Matter...", devices_found=0)
 
 
-async def run_matter_scan(db: Session):
+def run_matter_scan():
     """يكتشف أجهزة Matter عبر mDNS (Zeroconf)"""
+    db = SessionLocal()
     scan_state["running"] = True
     scan_state["message"] = "Searching for Matter devices..."
     manager.broadcast({"event": "scan_progress", "progress": 10, "message": scan_state["message"]})
@@ -722,60 +740,64 @@ async def run_matter_scan(db: Session):
 
     zc = Zeroconf()
     browser = ServiceBrowser(zc, "_matter._tcp.local.", MatterListener())
-    await asyncio.sleep(5)  # انتظار 5 ثواني للاكتشاف
+    time.sleep(5)  # Wait 5 seconds for discovery
     zc.close()
 
-    for dev in discovered:
-        risk_result = calculate_risk([], "Matter", {
-            "MATTER_OPEN_COMMISS": True,
-        })
-        existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
-        if not existing:
-            device = Device(
-                ip=dev["ip"],
-                hostname=dev["hostname"],
-                protocol="Matter",
-                risk_level=risk_result["risk_level"],
-                risk_score=risk_result["risk_score"],
-                last_seen=datetime.utcnow()
-            )
-            db.add(device)
-            db.flush()
-            for v in risk_result["vulnerabilities"]:
-                db.add(Vulnerability(
-                    device_id=device.id,
-                    vuln_type=v["vuln_type"],
-                    severity=v["severity"],
-                    description=v["description"],
-                    protocol=v.get("protocol")
-                ))
-            db.commit()
+    try:
+        for dev in discovered:
+            risk_result = calculate_risk([], "Matter", {
+                "MATTER_OPEN_COMMISS": True,
+            })
+            existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
+            if not existing:
+                device = Device(
+                    ip=dev["ip"],
+                    hostname=dev["hostname"],
+                    protocol="Matter",
+                    risk_level=risk_result["risk_level"],
+                    risk_score=risk_result["risk_score"],
+                    last_seen=datetime.utcnow()
+                )
+                db.add(device)
+                db.flush()
+                for v in risk_result["vulnerabilities"]:
+                    db.add(Vulnerability(
+                        device_id=device.id,
+                        vuln_type=v["vuln_type"],
+                        severity=v["severity"],
+                        description=v["description"],
+                        protocol=v.get("protocol")
+                    ))
+                db.commit()
 
-    scan_state["running"] = False
-    scan_state["progress"] = 100
-    manager.broadcast({"event": "scan_finished", "type": "matter", "count": len(discovered)})
+        scan_state["running"] = False
+        scan_state["progress"] = 100
+        manager.broadcast({"event": "scan_finished", "type": "matter", "count": len(discovered)})
+    finally:
+        db.close()
 
 
 # ────────────────────────────────────────────────────────────
 # 3. فحص أجهزة Zigbee (Real Hardware + Simulated)
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/zigbee", response_model=ScanStatus)
-async def start_zigbee_scan(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def start_zigbee_scan(background_tasks: BackgroundTasks):
     dongle_port = detect_zigbee_dongle()
     has_killerbee = check_killerbee_available()
     
     if dongle_port and has_killerbee:
-        background_tasks.add_task(run_zigbee_scan_real, dongle_port, db)
+        background_tasks.add_task(run_zigbee_scan_real, dongle_port)
         return ScanStatus(status="started", message=f"Real Zigbee scan started on {dongle_port}...", devices_found=0)
     else:
-        background_tasks.add_task(run_zigbee_scan_simulated, db)
+        background_tasks.add_task(run_zigbee_scan_simulated)
         return ScanStatus(status="started", message="Simulated Zigbee scan (no hardware detected)...", devices_found=0)
 
 
-async def run_zigbee_scan_real(port: str, db: Session):
+def run_zigbee_scan_real(port: str):
     """
     Real Zigbee scanning using KillerBee library.
     """
+    db = SessionLocal()
     scan_state["running"] = True
     scan_state["message"] = f"Scanning Zigbee network on {port}..."
     manager.broadcast({"event": "scan_progress", "progress": 10, "message": scan_state["message"]})
@@ -790,7 +812,7 @@ async def run_zigbee_scan_real(port: str, db: Session):
         scan_state["message"] = "Sniffing Zigbee traffic..."
         manager.broadcast({"event": "scan_progress", "progress": 30, "message": scan_state["message"]})
         
-        await asyncio.sleep(10)
+        time.sleep(10)
         
         for packet in sniffer.packets:
             if hasattr(packet, 'source_addr'):
@@ -826,42 +848,47 @@ async def run_zigbee_scan_real(port: str, db: Session):
         scan_state["running"] = False
         scan_state["progress"] = 100
         manager.broadcast({"event": "scan_finished", "type": "zigbee", "count": scan_state.get("devices_found", 0)})
+        db.close()
 
 
-def run_zigbee_scan_simulated(db: Session):
+def run_zigbee_scan_simulated():
     """Simulated Zigbee scan (Thread-safe)"""
-    scan_state["running"] = True
-    scan_state["progress"] = 0
-    manager.broadcast({"event": "scan_progress", "progress": 10, "message": "Starting simulated Zigbee scan..."})
+    db = SessionLocal()
+    try:
+        scan_state["running"] = True
+        scan_state["progress"] = 0
+        manager.broadcast({"event": "scan_progress", "progress": 10, "message": "Starting simulated Zigbee scan..."})
 
-    mock_zigbee = [
-        {"ip": "ZB:00:11:22:33:44:55", "mac": "00:11:22:33:44:55", "hostname": "Zigbee Bulb", "vendor": "Philips Hue"},
-        {"ip": "ZB:AA:BB:CC:DD:EE:FF", "mac": "AA:BB:CC:DD:EE:FF", "hostname": "Zigbee Sensor", "vendor": "IKEA"},
-        {"ip": "ZB:11:22:33:44:55:66", "mac": "11:22:33:44:55:66", "hostname": "Smart Plug", "vendor": "TP-Link"},
-    ]
+        mock_zigbee = [
+            {"ip": "ZB:00:11:22:33:44:55", "mac": "00:11:22:33:44:55", "hostname": "Zigbee Bulb", "vendor": "Philips Hue"},
+            {"ip": "ZB:AA:BB:CC:DD:EE:FF", "mac": "AA:BB:CC:DD:EE:FF", "hostname": "Zigbee Sensor", "vendor": "IKEA"},
+            {"ip": "ZB:11:22:33:44:55:66", "mac": "11:22:33:44:55:66", "hostname": "Smart Plug", "vendor": "TP-Link"},
+        ]
 
-    for i, dev in enumerate(mock_zigbee):
-        import time
-        time.sleep(1) # Simulate discovery time
-        risk_result = calculate_risk([], "Zigbee", {"ZIGBEE_DEFAULT_KEY": True})
-        existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
-        if not existing:
-            device = Device(
-                ip=dev["ip"], mac=dev["mac"], hostname=dev["hostname"],
-                vendor=dev["vendor"], protocol="Zigbee",
-                risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
-                last_seen=datetime.utcnow()
-            )
-            db.add(device)
-            db.flush()
-            for v in risk_result["vulnerabilities"]:
-                db.add(Vulnerability(device_id=device.id, vuln_type=v["vuln_type"], severity=v["severity"], description=v["description"], protocol="Zigbee"))
-            db.commit()
-            manager.broadcast({"event": "device_found", "device": {"hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
+        for i, dev in enumerate(mock_zigbee):
+            import time
+            time.sleep(1) # Simulate discovery time
+            risk_result = calculate_risk([], "Zigbee", {"ZIGBEE_DEFAULT_KEY": True})
+            existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
+            if not existing:
+                device = Device(
+                    ip=dev["ip"], mac=dev["mac"], hostname=dev["hostname"],
+                    vendor=dev["vendor"], protocol="Zigbee",
+                    risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
+                    last_seen=datetime.utcnow()
+                )
+                db.add(device)
+                db.flush()
+                for v in risk_result["vulnerabilities"]:
+                    db.add(Vulnerability(device_id=device.id, vuln_type=v["vuln_type"], severity=v["severity"], description=v["description"], protocol="Zigbee"))
+                db.commit()
+                manager.broadcast({"event": "device_found", "device": {"hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
 
-    scan_state["running"] = False
-    scan_state["progress"] = 100
-    manager.broadcast({"event": "scan_finished", "type": "zigbee", "count": len(mock_zigbee)})
+        scan_state["running"] = False
+        scan_state["progress"] = 100
+        manager.broadcast({"event": "scan_finished", "type": "zigbee", "count": len(mock_zigbee)})
+    finally:
+        db.close()
 
 
 # ────────────────────────────────────────────────────────────
@@ -902,27 +929,28 @@ async def clear_all_devices(db: Session = Depends(get_db)):
 # 6. Thread/Matter Deep Scan (Real Hardware Support)
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/thread", response_model=ScanStatus)
-async def start_thread_scan(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def start_thread_scan(background_tasks: BackgroundTasks):
     dongle_port = detect_thread_dongle()
     
     if dongle_port:
-        background_tasks.add_task(run_thread_scan_real, dongle_port, db)
+        background_tasks.add_task(run_thread_scan_real, dongle_port)
         return ScanStatus(status="started", message=f"Real Thread scan started on {dongle_port}...", devices_found=0)
     else:
-        background_tasks.add_task(run_thread_scan_simulated, db)
+        background_tasks.add_task(run_thread_scan_simulated)
         return ScanStatus(status="started", message="Simulated Thread scan (no hardware detected)...", devices_found=0)
 
 
-async def run_thread_scan_real(port: str, db: Session):
+def run_thread_scan_real(port: str):
     """
     Real Thread/Matter scanning using nRF52840 or similar.
     """
-    scan_state["running"] = True
-    scan_state["message"] = "Scanning Thread network..."
-    manager.broadcast({"event": "scan_progress", "progress": 10, "message": scan_state["message"]})
+    db = SessionLocal()
     discovered = []
-    
     try:
+        scan_state["running"] = True
+        scan_state["message"] = "Scanning Thread network..."
+        manager.broadcast({"event": "scan_progress", "progress": 10, "message": scan_state["message"]})
+
         # Try using chip-tool for Matter discovery
         result = subprocess.run(
             ["chip-tool", "pairing", "onnetwork-long", "1", "20202021", "3840"],
@@ -941,177 +969,192 @@ async def run_thread_scan_real(port: str, db: Session):
     
     if not discovered:
         # Fallback to simulated if no hardware/devices found
-        run_thread_scan_simulated(db)
+        run_thread_scan_simulated()
+        db.close()
         return
     
-    for dev in discovered:
-        risk_result = calculate_risk([], "Thread", {"THREAD_ACTIVE_COMMISSIONER": True})
-        existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
-        if not existing:
-            device = Device(
-                ip=dev["ip"], hostname=dev["hostname"], vendor=dev.get("vendor", "Unknown"),
-                protocol="Thread", risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
-                last_seen=datetime.utcnow()
-            )
-            db.add(device)
-            db.flush()
-            for v in risk_result["vulnerabilities"]:
-                db.add(Vulnerability(device_id=device.id, vuln_type=v["vuln_type"], severity=v["severity"], description=v["description"], protocol="Thread"))
-            db.commit()
-    
-    scan_state["message"] = f"Thread scan complete. {len(discovered)} devices found."
-    scan_state["running"] = False
-    scan_state["progress"] = 100
-    manager.broadcast({"event": "scan_finished", "type": "thread", "count": len(discovered)})
+    try:
+        for dev in discovered:
+            risk_result = calculate_risk([], "Thread", {"THREAD_ACTIVE_COMMISSIONER": True})
+            existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
+            if not existing:
+                device = Device(
+                    ip=dev["ip"], hostname=dev["hostname"], vendor=dev.get("vendor", "Unknown"),
+                    protocol="Thread", risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
+                    last_seen=datetime.utcnow()
+                )
+                db.add(device)
+                db.flush()
+                for v in risk_result["vulnerabilities"]:
+                    db.add(Vulnerability(device_id=device.id, vuln_type=v["vuln_type"], severity=v["severity"], description=v["description"], protocol="Thread"))
+                db.commit()
+        
+        scan_state["message"] = f"Thread scan complete. {len(discovered)} devices found."
+        scan_state["running"] = False
+        scan_state["progress"] = 100
+        manager.broadcast({"event": "scan_finished", "type": "thread", "count": len(discovered)})
+    finally:
+        db.close()
 
 
-def run_thread_scan_simulated(db: Session):
+def run_thread_scan_simulated():
     """Simulated Thread scan (Thread-safe)"""
-    scan_state["running"] = True
-    scan_state["progress"] = 0
-    manager.broadcast({"event": "scan_progress", "progress": 10, "message": "Starting simulated Thread scan..."})
+    db = SessionLocal()
+    try:
+        scan_state["running"] = True
+        scan_state["progress"] = 0
+        manager.broadcast({"event": "scan_progress", "progress": 10, "message": "Starting simulated Thread scan..."})
 
-    mock_thread = [
-        {"ip": "THREAD:FD00::1", "hostname": "Google Nest Hub", "vendor": "Google"},
-        {"ip": "THREAD:FD00::2", "hostname": "Apple HomePod Mini", "vendor": "Apple"},
-        {"ip": "THREAD:FD00::3", "hostname": "Smart Lock", "vendor": "Yale"},
-    ]
-    
-    for i, dev in enumerate(mock_thread):
-        import time
-        time.sleep(1)
-        risk_result = calculate_risk([], "Thread", {"THREAD_ACTIVE_COMMISSIONER": True})
-        existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
-        if not existing:
-            device = Device(
-                ip=dev["ip"], hostname=dev["hostname"], vendor=dev["vendor"],
-                protocol="Thread", risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
-                last_seen=datetime.utcnow()
-            )
-            db.add(device)
-            db.flush()
-            for v in risk_result["vulnerabilities"]:
-                db.add(Vulnerability(device_id=device.id, vuln_type=v["vuln_type"], severity=v["severity"], description=v["description"], protocol="Thread"))
-            db.commit()
-            manager.broadcast({"event": "device_found", "device": {"hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
+        mock_thread = [
+            {"ip": "THREAD:FD00::1", "hostname": "Google Nest Hub", "vendor": "Google"},
+            {"ip": "THREAD:FD00::2", "hostname": "Apple HomePod Mini", "vendor": "Apple"},
+            {"ip": "THREAD:FD00::3", "hostname": "Smart Lock", "vendor": "Yale"},
+        ]
+        
+        for i, dev in enumerate(mock_thread):
+            import time
+            time.sleep(1)
+            risk_result = calculate_risk([], "Thread", {"THREAD_ACTIVE_COMMISSIONER": True})
+            existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
+            if not existing:
+                device = Device(
+                    ip=dev["ip"], hostname=dev["hostname"], vendor=dev["vendor"],
+                    protocol="Thread", risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
+                    last_seen=datetime.utcnow()
+                )
+                db.add(device)
+                db.flush()
+                for v in risk_result["vulnerabilities"]:
+                    db.add(Vulnerability(device_id=device.id, vuln_type=v["vuln_type"], severity=v["severity"], description=v["description"], protocol="Thread"))
+                db.commit()
+                manager.broadcast({"event": "device_found", "device": {"hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
 
-    scan_state["running"] = False
-    scan_state["progress"] = 100
-    manager.broadcast({"event": "scan_finished", "type": "thread", "count": len(mock_thread)})
+        scan_state["running"] = False
+        scan_state["progress"] = 100
+        manager.broadcast({"event": "scan_finished", "type": "thread", "count": len(mock_thread)})
+    finally:
+        db.close()
 
 
 # ────────────────────────────────────────────────────────────
 # 7. Z-Wave Scan
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/zwave", response_model=ScanStatus)
-async def start_zwave_scan(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    background_tasks.add_task(run_zwave_scan, db)
+async def start_zwave_scan(background_tasks: BackgroundTasks):
+    background_tasks.add_task(run_zwave_scan)
     return ScanStatus(status="started", message="Starting Z-Wave network scan...", devices_found=0)
 
 
-def run_zwave_scan(db: Session):
+def run_zwave_scan():
     """Z-Wave network scanning (Sync)"""
-    scan_state["running"] = True
-    scan_state["message"] = "Scanning Z-Wave network..."
-    manager.broadcast({"event": "scan_progress", "progress": 10, "message": scan_state["message"]})
-    
-    # Check for Z-Wave stick
-    ports = serial.tools.list_ports.comports()
-    zwave_port = None
-    for port in ports:
-        if any(x in port.description.upper() for x in ['Z-STICK', 'ZWAVE', 'Z-WAVE', 'AEOTEC']):
-            zwave_port = port.device
-            break
-    
-    if zwave_port:
-        try:
-            ser = serial.Serial(zwave_port, 115200, timeout=1)
-            ser.write(b'\x01\x03\x00\x20\xdc\x05')
-            import time
-            time.sleep(2)
-            ser.close()
-        except: pass
-    
-    mock_zwave = [
-        {"ip": "ZW:00:01", "hostname": "Z-Wave Door Sensor", "vendor": "Aeotec"},
-        {"ip": "ZW:00:02", "hostname": "Z-Wave Smart Switch", "vendor": "GE"},
-    ]
-    
-    for dev in mock_zwave:
-        risk_result = calculate_risk([], "Z-Wave", {"ZWAVE_NO_ENCRYPTION": True})
-        existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
-        if not existing:
-            device = Device(
-                ip=dev["ip"], hostname=dev["hostname"], vendor=dev["vendor"],
-                protocol="Z-Wave", risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
-                last_seen=datetime.utcnow()
-            )
-            db.add(device)
-            db.flush()
-            db.commit()
-            manager.broadcast({"event": "device_found", "device": {"hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
-    
-    scan_state["running"] = False
-    scan_state["progress"] = 100
-    manager.broadcast({"event": "scan_finished", "type": "zwave", "count": len(mock_zwave)})
+    db = SessionLocal()
+    try:
+        scan_state["running"] = True
+        scan_state["message"] = "Scanning Z-Wave network..."
+        manager.broadcast({"event": "scan_progress", "progress": 10, "message": scan_state["message"]})
+        
+        # Check for Z-Wave stick
+        ports = serial.tools.list_ports.comports()
+        zwave_port = None
+        for port in ports:
+            if any(x in port.description.upper() for x in ['Z-STICK', 'ZWAVE', 'Z-WAVE', 'AEOTEC']):
+                zwave_port = port.device
+                break
+        
+        if zwave_port:
+            try:
+                ser = serial.Serial(zwave_port, 115200, timeout=1)
+                ser.write(b'\x01\x03\x00\x20\xdc\x05')
+                import time
+                time.sleep(2)
+                ser.close()
+            except: pass
+        
+        mock_zwave = [
+            {"ip": "ZW:00:01", "hostname": "Z-Wave Door Sensor", "vendor": "Aeotec"},
+            {"ip": "ZW:00:02", "hostname": "Z-Wave Smart Switch", "vendor": "GE"},
+        ]
+        
+        for dev in mock_zwave:
+            risk_result = calculate_risk([], "Z-Wave", {"ZWAVE_NO_ENCRYPTION": True})
+            existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
+            if not existing:
+                device = Device(
+                    ip=dev["ip"], hostname=dev["hostname"], vendor=dev["vendor"],
+                    protocol="Z-Wave", risk_level=risk_result["risk_level"], risk_score=risk_result["risk_score"],
+                    last_seen=datetime.utcnow()
+                )
+                db.add(device)
+                db.flush()
+                db.commit()
+                manager.broadcast({"event": "device_found", "device": {"hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
+        
+        scan_state["running"] = False
+        scan_state["progress"] = 100
+        manager.broadcast({"event": "scan_finished", "type": "zwave", "count": len(mock_zwave)})
+    finally:
+        db.close()
 
 
 # ────────────────────────────────────────────────────────────
 # 8. LoRaWAN Scan
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/lora", response_model=ScanStatus)
-async def start_lora_scan(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    background_tasks.add_task(run_lora_scan, db)
+async def start_lora_scan(background_tasks: BackgroundTasks):
+    background_tasks.add_task(run_lora_scan)
     return ScanStatus(status="started", message="Starting LoRaWAN scan...", devices_found=0)
 
 
-async def run_lora_scan(db: Session):
+def run_lora_scan():
     """
     LoRaWAN network scanning.
     Hardware: SX127x, RFM95, or Dragino LoRa HAT
     """
-    scan_state["running"] = True
-    scan_state["message"] = "Scanning LoRaWAN frequencies..."
-    
-    # Simulated LoRaWAN devices
-    mock_lora = [
-        {"ip": "LORA:DEV:001", "mac": "0102030405060708", "hostname": "LoRa Weather Station", "vendor": "Dragino"},
-        {"ip": "LORA:DEV:002", "mac": "0A0B0C0D0E0F1011", "hostname": "LoRa GPS Tracker", "vendor": "Heltec"},
-        {"ip": "LORA:DEV:003", "mac": "1112131415161718", "hostname": "LoRa Soil Sensor", "vendor": "TTGO"},
-    ]
-    
-    for dev in mock_lora:
-        risk_result = calculate_risk([], "LoRaWAN", {
-            "LORA_ABF_CONFIRMATION": True,
-            "LORA_WEAK_DEVNONCE": True
-        })
-        existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
-        if not existing:
-            device = Device(
-                ip=dev["ip"],
-                mac=dev["mac"],
-                hostname=dev["hostname"],
-                vendor=dev["vendor"],
-                protocol="LoRaWAN",
-                risk_level=risk_result["risk_level"],
-                risk_score=risk_result["risk_score"],
-                last_seen=datetime.utcnow()
-            )
-            db.add(device)
-            db.flush()
-            for v in risk_result["vulnerabilities"]:
-                db.add(Vulnerability(
-                    device_id=device.id,
-                    vuln_type=v["vuln_type"],
-                    severity=v["severity"],
-                    description=v["description"],
-                    protocol=v.get("protocol")
-                ))
-            db.commit()
-    
-    
-    scan_state["message"] = f"LoRaWAN scan complete. {len(mock_lora)} devices found."
-    scan_state["running"] = False
+    db = SessionLocal()
+    try:
+        scan_state["running"] = True
+        scan_state["message"] = "Scanning LoRaWAN frequencies..."
+        
+        # Simulated LoRaWAN devices
+        mock_lora = [
+            {"ip": "LORA:DEV:001", "mac": "0102030405060708", "hostname": "LoRa Weather Station", "vendor": "Dragino"},
+            {"ip": "LORA:DEV:002", "mac": "0A0B0C0D0E0F1011", "hostname": "LoRa GPS Tracker", "vendor": "Heltec"},
+            {"ip": "LORA:DEV:003", "mac": "1112131415161718", "hostname": "LoRa Soil Sensor", "vendor": "TTGO"},
+        ]
+        
+        for dev in mock_lora:
+            risk_result = calculate_risk([], "LoRaWAN", {
+                "LORA_ABF_CONFIRMATION": True,
+                "LORA_WEAK_DEVNONCE": True
+            })
+            existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
+            if not existing:
+                device = Device(
+                    ip=dev["ip"],
+                    mac=dev["mac"],
+                    hostname=dev["hostname"],
+                    vendor=dev["vendor"],
+                    protocol="LoRaWAN",
+                    risk_level=risk_result["risk_level"],
+                    risk_score=risk_result["risk_score"],
+                    last_seen=datetime.utcnow()
+                )
+                db.add(device)
+                db.flush()
+                for v in risk_result["vulnerabilities"]:
+                    db.add(Vulnerability(
+                        device_id=device.id,
+                        vuln_type=v["vuln_type"],
+                        severity=v["severity"],
+                        description=v["description"],
+                        protocol=v.get("protocol")
+                    ))
+                db.commit()
+        
+        scan_state["message"] = f"LoRaWAN scan complete. {len(mock_lora)} devices found."
+        scan_state["running"] = False
+    finally:
+        db.close()
 
 
 # ────────────────────────────────────────────────────────────
