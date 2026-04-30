@@ -10,22 +10,18 @@
 - [reports.py](file://backend/routers/reports.py)
 - [models.py](file://backend/models.py)
 - [database.py](file://backend/database.py)
-- [security_engine.py](file://backend/security_engine.py)
 - [websocket_manager.py](file://backend/websocket_manager.py)
-- [ai_engine.py](file://backend/ai_engine.py)
 - [requirements.txt](file://backend/requirements.txt)
-- [test_all.py](file://backend/test_all.py)
-- [README.md](file://backend/README.md)
 </cite>
 
 ## Update Summary
 **Changes Made**
-- Enhanced IoT scanning API with new hardware detection capabilities
-- Improved WiFi/Bluetooth API with enhanced scanning functionality
-- Added detailed hardware status endpoint for comprehensive dongle detection
-- Updated device detection algorithms with better MAC address resolution
-- Enhanced WebSocket broadcasting for real-time device discovery
-- Improved error handling and progress reporting across all scanning endpoints
+- Removed deprecated authentication endpoints and login page references
+- Enhanced WiFi/Bluetooth monitoring with comprehensive security testing capabilities
+- Improved IoT scanning with enhanced hardware detection and device discovery
+- Updated WebSocket communication with new event types for advanced monitoring
+- Added new WiFi security testing endpoints including monitor mode, client sniffing, and handshake capture
+- Enhanced access control with improved RFID/NFC card analysis
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -40,14 +36,14 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document provides comprehensive API documentation for the PentexOne IoT Security Platform. It covers all REST endpoints grouped by router modules, including IoT scanning, AI analysis, access control, wireless security, and reporting. It also documents WebSocket endpoints for real-time communication, authentication requirements, request/response schemas, error handling, rate limiting, security considerations, and API versioning.
+This document provides comprehensive API documentation for the PentexOne IoT Security Platform. It covers all REST endpoints grouped by router modules, including IoT scanning, AI analysis, access control, wireless security, and reporting. It also documents WebSocket endpoints for real-time communication, request/response schemas, error handling, rate limiting, security considerations, and API versioning.
 
-**Updated** Enhanced with new hardware detection capabilities and improved scanning functionality for comprehensive IoT security assessment.
+**Updated** Enhanced with new WiFi/Bluetooth monitoring capabilities, improved IoT scanning functionality, and updated WebSocket communication features. Authentication endpoints have been removed for development purposes.
 
 ## Project Structure
 The backend is organized around a FastAPI application that mounts multiple routers under distinct prefixes. Each router encapsulates a functional domain:
 - IoT scanning and discovery with advanced hardware detection
-- Wireless security (Wi-Fi, Bluetooth) with enhanced scanning capabilities
+- Wireless security (Wi-Fi, Bluetooth) with comprehensive monitoring capabilities
 - Access control (RFID/NFC)
 - AI-powered analysis
 - Reporting and PDF generation
@@ -62,20 +58,17 @@ A --> E["AI Router<br/>/ai/*"]
 A --> F["Reports Router<br/>/reports/*"]
 A --> G["WebSocket Endpoint<br/>/ws"]
 A --> H["Static Dashboard<br/>/dashboard"]
-A --> I["Auth Endpoint<br/>/auth/login"]
-A --> J["Settings Endpoints<br/>/settings GET/PUT"]
 ```
 
 **Diagram sources**
-- [main.py:44-48](file://backend/main.py#L44-L48)
-- [main.py:85-101](file://backend/main.py#L85-L101)
-- [main.py:50-64](file://backend/main.py#L50-L64)
+- [main.py:68-72](file://backend/main.py#L68-L72)
+- [main.py:103-126](file://backend/main.py#L103-L126)
+- [main.py:94-101](file://backend/main.py#L94-L101)
 
 **Section sources**
-- [main.py:14-48](file://backend/main.py#L14-L48)
+- [main.py:46-72](file://backend/main.py#L46-L72)
 
 ## Core Components
-- Authentication: Basic login endpoint with username/password validation.
 - Settings: CRUD-like endpoints to manage runtime settings (simulation mode, timeouts).
 - WebSocket: Heartbeat-based real-time notifications for scan progress and events.
 - Data Models: Pydantic models for request/response schemas and database entities.
@@ -83,12 +76,9 @@ A --> J["Settings Endpoints<br/>/settings GET/PUT"]
 - AI Engine: Pattern-based vulnerability prediction and recommendations.
 
 **Section sources**
-- [main.py:29-31](file://backend/main.py#L29-L31)
-- [main.py:70-74](file://backend/main.py#L70-L74)
+- [main.py:78-92](file://backend/main.py#L78-L92)
 - [models.py:6-71](file://backend/models.py#L6-L71)
-- [database.py:12-61](file://backend/database.py#L12-L61)
-- [security_engine.py:202-339](file://backend/security_engine.py#L202-L339)
-- [ai_engine.py:236-766](file://backend/ai_engine.py#L236-L766)
+- [database.py:12-80](file://backend/database.py#L12-L80)
 
 ## Architecture Overview
 The system integrates hardware detection, network scanning, protocol-specific discovery, and AI-driven analysis. Real-time updates are delivered via WebSocket broadcasts from background tasks.
@@ -100,8 +90,8 @@ participant API as "FastAPI App"
 participant Router as "Router Module"
 participant DB as "SQLAlchemy ORM"
 participant WS as "WebSocket Manager"
-Client->>API : "POST /iot/scan/wifi"
-API->>Router : "start_wifi_scan()"
+Client->>API : "POST /wireless/monitor/enable"
+API->>Router : "enable_monitor_mode()"
 Router->>DB : "save devices/vulnerabilities"
 Router->>WS : "broadcast scan_progress"
 WS-->>Client : "JSON heartbeat/progress"
@@ -110,18 +100,12 @@ API-->>Client : "ScanStatus"
 ```
 
 **Diagram sources**
-- [iot.py:291-298](file://backend/routers/iot.py#L291-L298)
-- [iot.py:300-413](file://backend/routers/iot.py#L300-L413)
-- [websocket_manager.py:21-45](file://backend/websocket_manager.py#L21-L45)
+- [wifi_bt.py:923-1028](file://backend/routers/wifi_bt.py#L923-L1028)
+- [websocket_manager.py:21-53](file://backend/websocket_manager.py#L21-L53)
 
 ## Detailed Component Analysis
 
-### Authentication and Settings
-- POST /auth/login
-  - Request body: LoginRequest { username, password }
-  - Response: JSON { status: "ok" } or 401 Unauthorized
-  - Notes: Username and password are environment-backed constants.
-
+### Settings Endpoints
 - GET /settings
   - Response: JSON { key: value } for all settings.
 
@@ -130,11 +114,9 @@ API-->>Client : "ScanStatus"
   - Response: JSON { status: "success" }
 
 **Section sources**
-- [main.py:29-31](file://backend/main.py#L29-L31)
-- [main.py:70-74](file://backend/main.py#L70-L74)
-- [main.py:50-64](file://backend/main.py#L50-L64)
+- [main.py:78-92](file://backend/main.py#L78-L92)
 - [models.py:68-71](file://backend/models.py#L68-L71)
-- [database.py:56-61](file://backend/database.py#L56-L61)
+- [database.py:72-80](file://backend/database.py#L72-L80)
 
 ### IoT Security Endpoints (/iot)
 **Updated** Enhanced with comprehensive hardware detection and improved device discovery capabilities.
@@ -196,24 +178,18 @@ Finish --> Return["Return ScanStatus"]
 ```
 
 **Diagram sources**
-- [iot.py:291-298](file://backend/routers/iot.py#L291-L298)
-- [iot.py:300-413](file://backend/routers/iot.py#L300-L413)
-- [websocket_manager.py:21-45](file://backend/websocket_manager.py#L21-L45)
+- [iot.py:465-708](file://backend/routers/iot.py#L465-L708)
+- [websocket_manager.py:21-53](file://backend/websocket_manager.py#L21-L53)
 
 **Section sources**
-- [iot.py:194-283](file://backend/routers/iot.py#L194-L283)
-- [iot.py:291-413](file://backend/routers/iot.py#L291-L413)
-- [iot.py:418-477](file://backend/routers/iot.py#L418-L477)
-- [iot.py:483-586](file://backend/routers/iot.py#L483-L586)
-- [iot.py:625-721](file://backend/routers/iot.py#L625-L721)
-- [iot.py:727-777](file://backend/routers/iot.py#L727-L777)
+- [iot.py:368-457](file://backend/routers/iot.py#L368-L457)
+- [iot.py:465-708](file://backend/routers/iot.py#L465-L708)
+- [iot.py:714-777](file://backend/routers/iot.py#L714-L777)
 - [iot.py:783-800](file://backend/routers/iot.py#L783-L800)
-- [iot.py:591-593](file://backend/routers/iot.py#L591-L593)
-- [iot.py:599-619](file://backend/routers/iot.py#L599-L619)
-- [iot.py:1120-1159](file://backend/routers/iot.py#L1120-L1159)
+- [iot.py:201-330](file://backend/routers/iot.py#L201-L330)
 
 ### Wireless Security Endpoints (/wireless)
-**Updated** Enhanced with improved SSID scanning, better BLE detection, and comprehensive network device discovery.
+**Updated** Enhanced with comprehensive WiFi security testing capabilities including monitor mode, client sniffing, handshake capture, and advanced threat detection.
 
 - GET /interfaces
   - Response: JSON { interfaces: [string] }
@@ -237,19 +213,61 @@ Finish --> Return["Return ScanStatus"]
   - Query params: port (default 443)
   - Response: JSON { status, host, port, issues[], secure }
 
-- POST /deauth/start
-  - Query params: interface (default wlan0mon)
-  - Response: JSON { status, message }
-
-- POST /deauth/stop
-  - Response: JSON { status, message }
-
-- GET /deauth/status
-  - Response: JSON { monitoring, packets_detected, last_alert? }
-
 - POST /discover/devices
   - Response: JSON { status, network, message }
   - Notes: One-click discovery of all devices on current network with enhanced detection.
+
+- POST /monitor/enable
+  - Response: JSON { status, message, interface, original_interface, channel }
+  - Notes: Enable monitor mode on Wi-Fi interface with RPi 5 built-in WiFi support.
+
+- POST /monitor/disable
+  - Response: JSON { status, message }
+
+- GET /monitor/status
+  - Response: JSON { active, interface, original_interface, mode, channel, started_at, actual_mode, actual_channel, platform }
+
+- POST /monitor/channel
+  - Response: JSON { status, message, channel }
+
+- POST /sniffer/start
+  - Response: JSON { status, message, interface, duration, clients_found: 0, probe_requests: 0 }
+
+- POST /sniffer/stop
+  - Response: JSON { status, clients_found, probe_requests }
+
+- GET /sniffer/status
+  - Response: JSON { active, clients: [], probe_requests: [], packets_captured, started_at }
+
+- GET /sniffer/clients
+  - Response: JSON { clients: [], count }
+
+- POST /handshake/start
+  - Response: JSON { status, message, bssid, channel, timeout }
+
+- POST /handshake/stop
+  - Response: JSON { status, handshake_captured, capture_file }
+
+- GET /handshake/status
+  - Response: JSON { active, target_ssid, target_bssid, channel, handshake_captured, capture_file, packets_captured, started_at }
+
+- POST /deauth/test
+  - Response: JSON { status, message, target, ap, count }
+
+- GET /deauth/test/status
+  - Response: JSON { active, target_mac, ap_bssid, packets_sent, client_disconnected, protected, started_at }
+
+- POST /rogue/start
+  - Response: JSON { status, message, duration }
+
+- POST /rogue/stop
+  - Response: JSON { status, alerts }
+
+- GET /rogue/status
+  - Response: JSON { active, alerts: [], known_aps: [], started_at }
+
+- POST /signal/map
+  - Response: JSON { status, networks: [], channel_usage: {}, best_channels: [], recommended_channel }
 
 ```mermaid
 sequenceDiagram
@@ -258,29 +276,37 @@ participant API as "FastAPI App"
 participant Router as "Wireless Router"
 participant DB as "SQLAlchemy ORM"
 participant WS as "WebSocket Manager"
-Client->>Router : "POST /wireless/scan/bluetooth"
-Router->>Router : "Enhanced BLE Device Discovery"
-Router->>DB : "Upsert Device + Vulnerabilities"
-Router->>WS : "Broadcast device_found"
-Router-->>Client : "ScanStatus"
+Client->>Router : "POST /wireless/monitor/enable"
+Router->>Router : "Configure Monitor Mode"
+Router->>DB : "Update Interface State"
+Router->>WS : "Broadcast monitor_enabled"
+Router-->>Client : "JSON { status : 'success' }"
 ```
 
 **Diagram sources**
-- [wifi_bt.py:182-187](file://backend/routers/wifi_bt.py#L182-L187)
-- [wifi_bt.py:190-240](file://backend/routers/wifi_bt.py#L190-L240)
+- [wifi_bt.py:923-1028](file://backend/routers/wifi_bt.py#L923-L1028)
+- [websocket_manager.py:21-53](file://backend/websocket_manager.py#L21-L53)
 
 **Section sources**
-- [wifi_bt.py:39-53](file://backend/routers/wifi_bt.py#L39-L53)
-- [wifi_bt.py:59-96](file://backend/routers/wifi_bt.py#L59-L96)
-- [wifi_bt.py:101-167](file://backend/routers/wifi_bt.py#L101-L167)
-- [wifi_bt.py:172-176](file://backend/routers/wifi_bt.py#L172-L176)
-- [wifi_bt.py:182-240](file://backend/routers/wifi_bt.py#L182-L240)
-- [wifi_bt.py:245-441](file://backend/routers/wifi_bt.py#L245-L441)
-- [wifi_bt.py:447-549](file://backend/routers/wifi_bt.py#L447-L549)
-- [wifi_bt.py:555-579](file://backend/routers/wifi_bt.py#L555-L579)
-- [wifi_bt.py:582-631](file://backend/routers/wifi_bt.py#L582-L631)
-- [wifi_bt.py:636-766](file://backend/routers/wifi_bt.py#L636-L766)
-- [wifi_bt.py:717-847](file://backend/routers/wifi_bt.py#L717-L847)
+- [wifi_bt.py:100-123](file://backend/routers/wifi_bt.py#L100-L123)
+- [wifi_bt.py:128-201](file://backend/routers/wifi_bt.py#L128-L201)
+- [wifi_bt.py:207-317](file://backend/routers/wifi_bt.py#L207-L317)
+- [wifi_bt.py:323-381](file://backend/routers/wifi_bt.py#L323-L381)
+- [wifi_bt.py:386-582](file://backend/routers/wifi_bt.py#L386-L582)
+- [wifi_bt.py:588-690](file://backend/routers/wifi_bt.py#L588-L690)
+- [wifi_bt.py:777-913](file://backend/routers/wifi_bt.py#L777-L913)
+- [wifi_bt.py:923-1028](file://backend/routers/wifi_bt.py#L923-L1028)
+- [wifi_bt.py:1031-1088](file://backend/routers/wifi_bt.py#L1031-L1088)
+- [wifi_bt.py:1091-1116](file://backend/routers/wifi_bt.py#L1091-L1116)
+- [wifi_bt.py:1119-1133](file://backend/routers/wifi_bt.py#L1119-L1133)
+- [wifi_bt.py:1140-1190](file://backend/routers/wifi_bt.py#L1140-L1190)
+- [wifi_bt.py:1193-1332](file://backend/routers/wifi_bt.py#L1193-L1332)
+- [wifi_bt.py:1339-1411](file://backend/routers/wifi_bt.py#L1339-L1411)
+- [wifi_bt.py:1414-1497](file://backend/routers/wifi_bt.py#L1414-L1497)
+- [wifi_bt.py:1504-1655](file://backend/routers/wifi_bt.py#L1504-L1655)
+- [wifi_bt.py:1662-1707](file://backend/routers/wifi_bt.py#L1662-L1707)
+- [wifi_bt.py:1710-1863](file://backend/routers/wifi_bt.py#L1710-L1863)
+- [wifi_bt.py:1869-2077](file://backend/routers/wifi_bt.py#L1869-L2077)
 
 ### Access Control Endpoints (/rfid)
 - POST /scan
@@ -309,12 +335,10 @@ Error --> Return
 
 **Diagram sources**
 - [access_control.py:47-84](file://backend/routers/access_control.py#L47-L84)
-- [access_control.py:15-27](file://backend/routers/access_control.py#L15-L27)
-- [access_control.py:29-45](file://backend/routers/access_control.py#L29-L45)
 
 **Section sources**
 - [access_control.py:47-84](file://backend/routers/access_control.py#L47-L84)
-- [access_control.py:86-94](file://backend/routers/access_control.py#L86-L94)
+- [access_control.py:86-95](file://backend/routers/access_control.py#L86-L95)
 
 ### AI Analysis Endpoints (/ai)
 - GET /analyze/device/{device_id}
@@ -363,8 +387,7 @@ AISecurityEngine --> SecurityEngine : "uses risk calculations"
 ```
 
 **Diagram sources**
-- [ai_engine.py:236-766](file://backend/ai_engine.py#L236-L766)
-- [security_engine.py:202-339](file://backend/security_engine.py#L202-L339)
+- [ai.py:26-330](file://backend/routers/ai.py#L26-L330)
 
 **Section sources**
 - [ai.py:26-64](file://backend/routers/ai.py#L26-L64)
@@ -374,7 +397,7 @@ AISecurityEngine --> SecurityEngine : "uses risk calculations"
 - [ai.py:161-169](file://backend/routers/ai.py#L161-L169)
 - [ai.py:175-220](file://backend/routers/ai.py#L175-L220)
 - [ai.py:226-264](file://backend/routers/ai.py#L226-L264)
-- [ai.py:270-329](file://backend/routers/ai.py#L270-L329)
+- [ai.py:270-330](file://backend/routers/ai.py#L270-L330)
 
 ### Reporting Endpoints (/reports)
 - GET /summary
@@ -395,15 +418,15 @@ Reports-->>Client : "FileResponse(PDF)"
 ```
 
 **Diagram sources**
-- [reports.py:37-157](file://backend/routers/reports.py#L37-L157)
+- [reports.py:37-158](file://backend/routers/reports.py#L37-L158)
 
 **Section sources**
 - [reports.py:18-34](file://backend/routers/reports.py#L18-L34)
-- [reports.py:37-157](file://backend/routers/reports.py#L37-L157)
+- [reports.py:37-158](file://backend/routers/reports.py#L37-L158)
 
 ### WebSocket Endpoints
 - GET /ws
-  - Behavior: Accepts WebSocket connection and sends periodic heartbeat messages. Broadcasts scan progress and events from background tasks.
+  - Behavior: Accepts WebSocket connection and sends periodic heartbeat messages. Broadcasts scan progress and events from background tasks including device_found, scan_progress, scan_finished, wifi_client_found, handshake_progress, deauth_test_progress, rogue_ap_alert, and others.
 
 ```mermaid
 sequenceDiagram
@@ -419,18 +442,18 @@ API->>WS : "manager.disconnect(websocket)"
 ```
 
 **Diagram sources**
-- [main.py:90-101](file://backend/main.py#L90-L101)
-- [websocket_manager.py:11-19](file://backend/websocket_manager.py#L11-L19)
+- [main.py:114-126](file://backend/main.py#L114-L126)
+- [websocket_manager.py:11-55](file://backend/websocket_manager.py#L11-L55)
 
 **Section sources**
-- [main.py:90-101](file://backend/main.py#L90-L101)
-- [websocket_manager.py:7-47](file://backend/websocket_manager.py#L7-L47)
+- [main.py:114-126](file://backend/main.py#L114-L126)
+- [websocket_manager.py:7-56](file://backend/websocket_manager.py#L7-L56)
 
 ## Dependency Analysis
 Key dependencies and their roles:
 - FastAPI: Application framework and routing.
 - python-nmap: Network discovery and port scanning.
-- scapy: Deauthentication frame detection.
+- scapy: Deauthentication frame detection and packet analysis.
 - zeroconf: mDNS discovery for Matter devices.
 - reportlab: PDF report generation.
 - bleak: BLE device discovery (optional).
@@ -461,33 +484,29 @@ Routers --> Crypto["cryptography"]
 - Background scanning tasks prevent blocking the main event loop; use ScanStatus to poll progress.
 - Nmap scans can be resource-intensive; tune network ranges and timeouts.
 - WebSocket broadcasting uses thread-safe coroutine scheduling; ensure minimal payload sizes for frequent events.
-- AI analysis relies on rule-based heuristics; results are deterministic and fast.
 - Enhanced hardware detection provides comprehensive dongle status monitoring.
+- Monitor mode operations require elevated privileges and careful resource management.
 
 ## Troubleshooting Guide
-- Authentication failures: Ensure username/password match environment-backed constants.
 - No devices found during scans: Verify network connectivity, permissions, and hardware dongles.
 - BLE scanning errors: Install bleak and ensure OS-level Bluetooth support.
 - TLS checks fail: Confirm target hosts expose HTTPS on the specified port and certificates are valid.
 - WebSocket disconnections: Check server logs for exceptions and ensure client reconnect logic.
 - Hardware detection issues: Use /iot/hardware/status endpoint to verify dongle connectivity.
+- Monitor mode failures: Ensure proper privileges and compatible hardware for monitor mode operations.
+- WiFi security testing errors: Verify monitor mode is enabled and required tools (aircrack-ng, iw) are installed.
 
 **Section sources**
-- [main.py:23-32](file://backend/main.py#L23-L32)
-- [wifi_bt.py:184-186](file://backend/routers/wifi_bt.py#L184-L186)
-- [wifi_bt.py:582-631](file://backend/routers/wifi_bt.py#L582-L631)
+- [wifi_bt.py:923-1028](file://backend/routers/wifi_bt.py#L923-L1028)
 - [websocket_manager.py:16-19](file://backend/websocket_manager.py#L16-L19)
-- [iot.py:1120-1159](file://backend/routers/iot.py#L1120-L1159)
+- [iot.py:201-330](file://backend/routers/iot.py#L201-L330)
 
 ## Conclusion
-The PentexOne API provides a comprehensive toolkit for IoT security scanning, AI-driven analysis, access control auditing, and reporting. Real-time updates via WebSocket enhance operational visibility. The enhanced hardware detection capabilities and improved scanning functionality make it a powerful solution for comprehensive IoT security assessment across multiple wireless protocols.
+The PentexOne API provides a comprehensive toolkit for IoT security scanning, AI-driven analysis, access control auditing, and advanced WiFi security testing. Real-time updates via WebSocket enhance operational visibility with enhanced event types for comprehensive monitoring. The enhanced hardware detection capabilities, improved scanning functionality, and comprehensive WiFi security testing make it a powerful solution for modern IoT security assessment across multiple wireless protocols.
 
 ## Appendices
 
 ### Request/Response Schemas
-- LoginRequest
-  - Fields: username (string), password (string)
-
 - ScanRequest
   - Fields: network (string, default "192.168.1.0/24"), timeout (integer)
 
@@ -513,20 +532,36 @@ The PentexOne API provides a comprehensive toolkit for IoT security scanning, AI
 - [models.py:6-71](file://backend/models.py#L6-L71)
 
 ### Error Codes
-- 401 Unauthorized: Invalid credentials on /auth/login.
 - 404 Not Found: Device not found on /iot/devices/{device_id}.
 - 500 Internal Server Error: Exceptions raised by background tasks or system commands.
 
 **Section sources**
-- [main.py:70-74](file://backend/main.py#L70-L74)
 - [iot.py:605-611](file://backend/routers/iot.py#L605-L611)
 
 ### Rate Limiting and Security Considerations
 - Rate limiting: Not implemented at the API level; consider adding middleware for production deployments.
 - Transport security: Use HTTPS in production; enforce TLS for WebSocket upgrades.
-- Authentication: Enforce JWT or session-based auth for sensitive endpoints.
+- Authentication: Authentication endpoints have been removed for development purposes; all endpoints are currently public.
 - Input validation: All endpoints validate request bodies using Pydantic models.
-- Permissions: Restrict administrative endpoints (settings, device deletion) to authorized users.
+- Permissions: Monitor mode operations require elevated privileges; restrict administrative endpoints to authorized users.
 
 ### API Versioning
 - No explicit versioning scheme is implemented. Consider adding a version prefix (e.g., /api/v1) or Accept-Version header for future-proofing.
+
+### WebSocket Event Types
+- scan_progress: Progress updates during scans
+- scan_finished: Completion notification
+- device_found: New device discovery
+- wifi_client_found: WiFi client detection
+- handshake_progress: WPA handshake capture progress
+- deauth_test_progress: Deauthentication test progress
+- deauth_test_complete: Deauthentication test completion
+- rogue_ap_alert: Rogue AP detection alert
+- sniffer_finished: Client sniffer completion
+- heartbeat: Connection health check
+
+**Section sources**
+- [websocket_manager.py:21-53](file://backend/websocket_manager.py#L21-L53)
+- [wifi_bt.py:1259-1321](file://backend/routers/wifi_bt.py#L1259-L1321)
+- [wifi_bt.py:1443-1468](file://backend/routers/wifi_bt.py#L1443-L1468)
+- [wifi_bt.py:1637-1645](file://backend/routers/wifi_bt.py#L1637-L1645)

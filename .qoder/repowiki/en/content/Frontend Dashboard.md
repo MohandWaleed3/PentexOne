@@ -18,13 +18,13 @@
 
 ## Update Summary
 **Changes Made**
-- Enhanced responsive design with mobile menu system featuring off-canvas drawer and overlay
-- Implemented touch screen optimizations with larger touch targets and gesture support
-- Added lightweight mode performance adaptations for Raspberry Pi and low-power devices
-- Updated statistics grid layouts with responsive breakpoints for all screen sizes
-- Improved device table responsiveness with horizontal scrolling and touch-friendly interactions
-- Optimized chart performance with reduced animations and visual effects for lightweight mode
-- Added landscape phone optimization for better vertical space utilization
+- Enhanced real-time device discovery with comprehensive WebSocket event handling for device_found, vulnerability_found, scan_progress, scan_finished, and scan_error events
+- Implemented advanced WebSocket communication with heartbeat mechanism and automatic reconnection
+- Added extensive toast notification system with visual and audio feedback for critical events
+- Enhanced mobile menu system with improved overlay animations and automatic closing behavior
+- Expanded AI-powered features with real-time security scoring and recommendations
+- Improved responsive design with enhanced touch screen optimizations and lightweight mode detection
+- Added comprehensive advanced WiFi utilities including monitor mode, client sniffing, handshake capture, and security testing
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -40,6 +40,8 @@
 
 ## Introduction
 This document describes the modern web dashboard interface for PentexOne, a security auditing platform for IoT ecosystems. The dashboard features enhanced responsive design with mobile-first approach, touch screen optimizations, and lightweight mode performance adaptations. It covers the dark theme design, adaptive layouts across all device types, real-time updates via WebSocket, and analytics powered by Chart.js. The implementation includes AI-powered security analysis, collapsible navigation, toast notifications, and performance-optimized visualizations.
+
+**Updated** Enhanced with comprehensive real-time device discovery, advanced WebSocket communication, and expanded AI-powered security analysis capabilities.
 
 ## Project Structure
 The dashboard is a progressive web application served by the backend FastAPI application. The frontend assets (HTML, JS, CSS) are served under the `/dashboard` route, while the backend exposes REST APIs and a WebSocket endpoint for live events. The AI engine provides intelligent security analysis and recommendations with performance optimizations for resource-constrained devices.
@@ -86,6 +88,9 @@ AIEngine --> Routers
 - [style.css:1](file://backend/static/style.css#L1)
 
 ## Core Components
+- **Enhanced Real-Time Device Discovery**: Comprehensive WebSocket event handling for device_found, vulnerability_found, scan_progress, scan_finished, and scan_error events
+- **Advanced WebSocket Communication**: Heartbeat mechanism with automatic reconnection and thread-safe broadcasting
+- **Comprehensive Toast Notification System**: Visual and audio feedback for critical events with customizable styling
 - **Enhanced Responsive Design**: Mobile-first approach with off-canvas sidebar, touch-optimized layouts, and adaptive breakpoints
 - **Mobile Menu System**: Hamburger menu with overlay, smooth animations, and automatic closing on navigation
 - **Touch Screen Optimizations**: Large touch targets, gesture support, and visual feedback for mobile users
@@ -93,9 +98,11 @@ AIEngine --> Routers
 - **Adaptive Statistics Grid**: Responsive grid layout that adapts from 4 columns on desktop to single column on phones
 - **Optimized Device Tables**: Horizontal scrolling for narrow screens, touch-friendly row selection, and reduced visual complexity
 - **Performance-Optimized Charts**: Reduced animations and visual effects in lightweight mode for better performance
-- **Real-time Updates**: WebSocket integration with heartbeat mechanism and automatic reconnection
-- **AI-Powered Features**: Intelligent security recommendations with performance-conscious rendering
+- **AI-Powered Security Analysis**: Real-time security scoring, recommendations, and device analysis with predictive capabilities
+- **Advanced WiFi Utilities**: Monitor mode, client sniffing, handshake capture, deauth testing, and rogue AP detection
 - **Glass Morphism Design**: Modern dark theme with backdrop filters and glass-like panels
+
+**Updated** Added comprehensive real-time device discovery capabilities, advanced WebSocket communication, and extensive AI-powered security analysis features.
 
 **Section sources**
 - [style.css:1](file://backend/static/style.css#L1)
@@ -154,6 +161,96 @@ JS->>V : Update AI recommendations
 - [wifi_bt.py:182](file://backend/routers/wifi_bt.py#L182)
 
 ## Detailed Component Analysis
+
+### Enhanced Real-Time Device Discovery System
+- **Comprehensive WebSocket Event Handling**: Supports device_found, vulnerability_found, scan_progress, scan_finished, scan_error, wifi_client_found, handshake_progress, handshake_captured, rogue_ap_alert, deauth_test_progress, monitor_mode_changed, and signal_map_update events
+- **Thread-Safe Broadcasting**: WebSocket manager handles concurrent connections with automatic cleanup and error handling
+- **Real-Time UI Updates**: Automatic device table updates, chart refresh, and AI analysis updates upon new discoveries
+- **Progress Tracking**: Visual progress indicators with percentage completion and status messages
+- **Error Handling**: Comprehensive error reporting with user-friendly toast notifications
+
+```mermaid
+flowchart TD
+WebSocket["WebSocket Connection"] --> Events["Event Processing"]
+Events --> DeviceFound["device_found<br/>Update UI & Toast"]
+Events --> VulnerabilityFound["vulnerability_found<br/>Critical Alert"]
+Events --> ScanProgress["scan_progress<br/>Update Progress Bar"]
+Events --> ScanFinished["scan_finished<br/>Refresh Data"]
+Events --> ScanError["scan_error<br/>Show Error Toast"]
+DeviceFound --> UIUpdate["Update Stats & Charts"]
+VulnerabilityFound --> CriticalAlert["Audio & Visual Alert"]
+ScanProgress --> ProgressBar["Animate Progress"]
+ScanFinished --> DataRefresh["Fetch Latest Data"]
+```
+
+**Diagram sources**
+- [app.js:201](file://backend/static/app.js#L201)
+- [app.js:247](file://backend/static/app.js#L247)
+- [websocket_manager.py:21](file://backend/websocket_manager.py#L21)
+
+**Section sources**
+- [app.js:201](file://backend/static/app.js#L201)
+- [app.js:247](file://backend/static/app.js#L247)
+- [websocket_manager.py:21](file://backend/websocket_manager.py#L21)
+
+### Advanced WebSocket Communication and Heartbeat
+- **Connection Management**: Establishes ws or wss depending on origin protocol; reconnects on close with exponential backoff
+- **Heartbeat Mechanism**: Regular heartbeat messages maintain connection health and detect disconnections
+- **Thread-Safe Broadcasting**: ConnectionManager handles concurrent WebSocket connections with proper cleanup
+- **Event Routing**: Comprehensive event handling for all device discovery and WiFi utility features
+- **Automatic Reconnection**: Fallback mechanisms ensure continuous real-time updates
+
+```mermaid
+sequenceDiagram
+participant Client as "Dashboard Client"
+participant WS as "WebSocket Server"
+participant Manager as "ConnectionManager"
+participant Router as "Backend Router"
+Client->>WS : Connect ws : //host/ws
+WS->>Client : heartbeat
+Client->>WS : handleWebSocketMessage()
+WS->>Client : broadcast device_found/vulnerability_found
+Client->>Client : updateUI()
+WS->>Client : heartbeat (every 30s)
+WS-->>Client : onclose (if disconnected)
+Client->>WS : reconnect after delay
+```
+
+**Diagram sources**
+- [app.js:185](file://backend/static/app.js#L185)
+- [app.js:190](file://backend/static/app.js#L190)
+- [websocket_manager.py:11](file://backend/websocket_manager.py#L11)
+
+**Section sources**
+- [app.js:185](file://backend/static/app.js#L185)
+- [app.js:190](file://backend/static/app.js#L190)
+- [websocket_manager.py:11](file://backend/websocket_manager.py#L11)
+
+### Comprehensive Toast Notification System
+- **Visual Feedback**: Animated toast messages with customizable styling and positioning
+- **Audio Alerts**: Critical risk events trigger sound notifications for immediate attention
+- **Event-Based Display**: Automatic toast generation for all major system events
+- **Auto-Cleanup**: Toast messages automatically disappear after timeout period
+- **Custom Styling**: Different styles for info, success, warning, and risk level notifications
+
+```mermaid
+flowchart TD
+Event["System Event"] --> Toast["Create Toast Element"]
+Toast --> Position["Position Bottom-Right"]
+Toast --> Animate["Slide In Animation"]
+Toast --> Display["Display Message"]
+Display --> Timer["5 Second Timer"]
+Timer --> FadeOut["Fade Out & Remove"]
+Audio["Risk Event"] --> Sound["Play Alert Sound"]
+```
+
+**Diagram sources**
+- [app.js:256](file://backend/static/app.js#L256)
+- [app.js:299](file://backend/static/app.js#L299)
+
+**Section sources**
+- [app.js:256](file://backend/static/app.js#L256)
+- [app.js:299](file://backend/static/app.js#L299)
 
 ### Enhanced Responsive Design System
 - **Mobile-First Approach**: Designed for mobile devices first with progressive enhancement for larger screens
@@ -370,36 +467,6 @@ ComplexEffects --> SmoothTransitions["Smooth animations"]
 - [app.js:90](file://backend/static/app.js#L90)
 - [style.css:1310](file://backend/static/style.css#L1310)
 
-### Real-Time Updates via WebSocket
-- **Connection Management**: Establishes ws or wss depending on origin protocol; reconnects on close
-- **Heartbeat Mechanism**: Regular heartbeat messages maintain connection health
-- **Event Handling**: Handles heartbeat, device_found, vulnerability_found, scan_progress, scan_finished, scan_error
-- **UI Synchronization**: Updates stats, charts, tables, and AI recommendations in real-time
-- **Toast Notifications**: Visual and audio feedback for critical events
-
-```mermaid
-sequenceDiagram
-participant JS as "app.js"
-participant WS as "WebSocket"
-participant BE as "Backend"
-JS->>WS : new WebSocket(ws : //host/ws)
-WS-->>JS : onmessage (heartbeat)
-BE-->>WS : broadcast {event : "device_found", ...}
-WS-->>JS : onmessage
-JS->>JS : handleWebSocketMessage(data)
-JS->>DOM : Update stats, tables, charts, toasts, AI suggestions
-```
-
-**Diagram sources**
-- [app.js:113](file://backend/static/app.js#L113)
-- [app.js:128](file://backend/static/app.js#L128)
-- [main.py:90](file://backend/main.py#L90)
-
-**Section sources**
-- [app.js:113](file://backend/static/app.js#L113)
-- [app.js:128](file://backend/static/app.js#L128)
-- [main.py:90](file://backend/main.py#L90)
-
 ### Analytics with Chart.js
 - **Risk Distribution**: Doughnut chart (Safe, Medium, Risk) with conditional animations
 - **Protocol Distribution**: Vertical bar chart (Wi-Fi, Bluetooth, Zigbee, Thread, Z-Wave, LoRaWAN, RFID)
@@ -543,6 +610,46 @@ UI->>UI : show predicted vulns/anomaly
 - [app.js:1025](file://backend/static/app.js#L1025)
 - [ai_engine.py:236](file://backend/ai_engine.py#L236)
 
+### Advanced WiFi Utilities and Security Testing
+- **Monitor Mode**: Enable/disable monitor mode with interface selection and channel configuration
+- **Client Sniffer**: Capture probe requests and data frames for device discovery
+- **Handshake Capture**: WPA/WPA2 handshake capture with timeout and file saving
+- **Deauth Attack Test**: Test network resilience and detect 802.11w MFP protection
+- **Rogue AP Detection**: Identify malicious access points impersonating legitimate networks
+- **Signal Mapping**: Analyze channel overlap and recommend optimal WiFi channels
+
+```mermaid
+flowchart TD
+WiFiPanel["Advanced WiFi Panel"] --> Monitor["Monitor Mode"]
+WiFiPanel --> Sniffer["Client Sniffer"]
+WiFiPanel --> Handshake["Handshake Capture"]
+WiFiPanel --> Deauth["Deauth Test"]
+WiFiPanel --> Rogue["Rogue AP Detection"]
+WiFiPanel --> Signal["Signal Mapping"]
+Monitor --> Enable["Enable Monitor Mode"]
+Sniffer --> Start["Start Sniffing"]
+Handshake --> Capture["Capture Handshake"]
+Deauth --> Test["Test Resilience"]
+Rogue --> Detect["Detect Rogue APs"]
+Signal --> Map["Map Signals"]
+```
+
+**Diagram sources**
+- [app.js:1145](file://backend/static/app.js#L1145)
+- [app.js:1274](file://backend/static/app.js#L1274)
+- [app.js:1404](file://backend/static/app.js#L1404)
+- [app.js:1523](file://backend/static/app.js#L1523)
+- [app.js:1623](file://backend/static/app.js#L1623)
+- [app.js:1742](file://backend/static/app.js#L1742)
+
+**Section sources**
+- [app.js:1145](file://backend/static/app.js#L1145)
+- [app.js:1274](file://backend/static/app.js#L1274)
+- [app.js:1404](file://backend/static/app.js#L1404)
+- [app.js:1523](file://backend/static/app.js#L1523)
+- [app.js:1623](file://backend/static/app.js#L1623)
+- [app.js:1742](file://backend/static/app.js#L1742)
+
 ### Authentication and Settings
 - **Mobile-Optimized Login**: Touch-friendly form controls and responsive layout
 - **Session Management**: Secure authentication with session storage and redirect handling
@@ -614,8 +721,9 @@ JS --> Touch["touch optimizations"]
 - **WebSocket Efficiency**: Heartbeat mechanism maintains connection health with minimal overhead
 - **Rendering Optimization**: Virtualization techniques for large datasets, reduced DOM complexity on mobile
 - **Animation Control**: Prefers-reduced-motion media query support for accessibility and performance
+- **Toast Performance**: Efficient DOM manipulation and automatic cleanup to prevent memory leaks
 
-[No sources needed since this section provides general guidance]
+**Updated** Enhanced with comprehensive WebSocket performance optimizations and real-time event handling efficiency.
 
 ## Troubleshooting Guide
 - **Mobile Menu Not Working**: Verify JavaScript execution and CSS classes for mobile menu toggle
@@ -626,6 +734,11 @@ JS --> Touch["touch optimizations"]
 - **Touch Scrolling Issues**: Verify `-webkit-overflow-scrolling: touch` is applied to scrollable containers
 - **Responsive Layout Problems**: Check media query breakpoints and CSS grid/flex properties
 - **AI Analysis Slowdown**: Confirm lightweight mode is active on resource-constrained devices
+- **Real-Time Updates Not Working**: Verify WebSocket connection status and event handler registration
+- **Toast Notifications Missing**: Check toast container element and CSS positioning
+- **Advanced WiFi Features Failing**: Verify required system tools (aircrack-ng, iw) are installed and accessible
+
+**Updated** Added troubleshooting guidance for real-time device discovery, WebSocket communication, and advanced WiFi utilities.
 
 **Section sources**
 - [index.html:421](file://backend/static/index.html#L421)
@@ -634,9 +747,9 @@ JS --> Touch["touch optimizations"]
 - [app.js:113](file://backend/static/app.js#L113)
 
 ## Conclusion
-The PentexOne dashboard represents a modern, responsive web application designed for both desktop and mobile environments. The enhanced responsive design system provides seamless experiences across all device types, from desktop browsers to Raspberry Pi installations. The mobile menu system, touch screen optimizations, and lightweight mode performance adaptations ensure optimal usability and performance regardless of the device. The combination of real-time updates, AI-powered security analysis, and performance-conscious design creates a robust platform for IoT security auditing that scales effectively from powerful desktop systems to embedded devices.
+The PentexOne dashboard represents a modern, responsive web application designed for both desktop and mobile environments. The enhanced responsive design system provides seamless experiences across all device types, from desktop browsers to Raspberry Pi installations. The comprehensive real-time device discovery system with advanced WebSocket communication ensures immediate updates and feedback. The mobile menu system, touch screen optimizations, and lightweight mode performance adaptations guarantee optimal usability and performance regardless of the device. The combination of real-time updates, AI-powered security analysis, advanced WiFi utilities, and performance-conscious design creates a robust platform for IoT security auditing that scales effectively from powerful desktop systems to embedded devices.
 
-[No sources needed since this section summarizes without analyzing specific files]
+**Updated** Enhanced with comprehensive real-time device discovery capabilities, advanced WebSocket communication, extensive AI-powered security analysis, and sophisticated WiFi utilities for professional security auditing.
 
 ## Appendices
 
@@ -666,6 +779,13 @@ The PentexOne dashboard represents a modern, responsive web application designed
   - [app.js:989](file://backend/static/app.js#L989)
   - [app.js:1050](file://backend/static/app.js#L1050)
   - [app.js:1083](file://backend/static/app.js#L1083)
+- **Advanced WiFi Utilities**:
+  - [app.js:1145](file://backend/static/app.js#L1145)
+  - [app.js:1274](file://backend/static/app.js#L1274)
+  - [app.js:1404](file://backend/static/app.js#L1404)
+  - [app.js:1523](file://backend/static/app.js#L1523)
+  - [app.js:1623](file://backend/static/app.js#L1623)
+  - [app.js:1742](file://backend/static/app.js#L1742)
 
 ### Customization Guidelines
 - **Responsive Breakpoints**: Modify media query values in style.css to adjust breakpoint thresholds
@@ -675,6 +795,10 @@ The PentexOne dashboard represents a modern, responsive web application designed
 - **Grid Layouts**: Update CSS grid properties to change responsive column counts and spacing
 - **Chart Customization**: Configure animation settings and visual effects based on device capabilities
 - **Device Detection**: Modify JavaScript detection logic to add custom device type support
+- **WebSocket Configuration**: Adjust heartbeat intervals and reconnection delays in WebSocket initialization
+- **Toast Customization**: Modify toast styling, positioning, and animation durations in CSS and JavaScript
+
+**Updated** Added customization guidelines for advanced WiFi utilities and WebSocket configurations.
 
 **Section sources**
 - [style.css:958](file://backend/static/style.css#L958)
@@ -688,8 +812,9 @@ The PentexOne dashboard represents a modern, responsive web application designed
 - **Keyboard Navigation**: Ensure full keyboard accessibility for desktop users
 - **Color Contrast**: Verify sufficient contrast ratios for text and interactive elements
 - **Responsive Testing**: Test all features across different screen sizes and orientations
+- **WebSocket Accessibility**: Ensure real-time updates are accessible to assistive technologies
 
-[No sources needed since this section provides general guidance]
+**Updated** Enhanced accessibility considerations for real-time WebSocket updates and advanced WiFi utilities.
 
 ### Cross-Browser Compatibility
 - **Modern Browsers**: Full support for Chrome, Firefox, Safari, and Edge with progressive enhancement
@@ -697,8 +822,9 @@ The PentexOne dashboard represents a modern, responsive web application designed
 - **Legacy Support**: Graceful degradation for older browsers with essential functionality preserved
 - **WebSocket Support**: Automatic fallback for environments without WebSocket support
 - **CSS Feature Detection**: Use of modern CSS features with appropriate fallbacks
+- **AI Feature Compatibility**: Ensure AI analysis works across different browser environments
 
-[No sources needed since this section provides general guidance]
+**Updated** Added cross-browser compatibility considerations for advanced WiFi utilities and AI features.
 
 ### Integration Patterns with Backend Endpoints
 - **Authentication**:
@@ -717,12 +843,31 @@ The PentexOne dashboard represents a modern, responsive web application designed
   - POST /iot/scan/thread
   - POST /iot/scan/zwave
   - POST /iot/scan/lora
+  - POST /iot/scan/matter
   - GET /iot/scan/status
 - **Wireless Utilities**:
   - POST /wireless/test/ports/{ip}
   - POST /wireless/test/credentials/{ip}
   - GET /wireless/scan/ssids
   - POST /wireless/tls/check/{host}
+  - POST /wireless/monitor/enable
+  - POST /wireless/monitor/disable
+  - POST /wireless/monitor/channel
+  - GET /wireless/monitor/status
+  - POST /wireless/sniffer/start
+  - POST /wireless/sniffer/stop
+  - GET /wireless/sniffer/status
+  - GET /wireless/sniffer/clients
+  - POST /wireless/handshake/start
+  - POST /wireless/handshake/stop
+  - GET /wireless/handshake/status
+  - POST /wireless/deauth/test
+  - GET /wireless/deauth/test/status
+  - POST /wireless/rogue/start
+  - POST /wireless/rogue/stop
+  - GET /wireless/rogue/status
+  - POST /wireless/signal/map
+  - GET /wireless/interfaces
 - **Reports**:
   - GET /reports/generate/pdf
 - **AI Analysis**:
@@ -734,6 +879,8 @@ The PentexOne dashboard represents a modern, responsive web application designed
   - GET /ai/remediations
   - GET /ai/predict/risks
   - GET /ai/classify/devices
+
+**Updated** Added comprehensive integration patterns for advanced WiFi utilities and AI-powered security analysis.
 
 **Section sources**
 - [main.py:50](file://backend/main.py#L50)

@@ -8,11 +8,17 @@
 - [database.py](file://backend/database.py)
 - [security_engine.py](file://backend/security_engine.py)
 - [reports.py](file://backend/routers/reports.py)
-- [index.html](file://backend/static/index.html)
-- [login.html](file://backend/static/login.html)
 - [websocket_manager.py](file://backend/websocket_manager.py)
-- [README.md](file://backend/README.md)
+- [index.html](file://backend/static/index.html)
 </cite>
+
+## Update Summary
+**Changes Made**
+- Updated authentication system section to reflect removal of experimental authentication system
+- Added CORS configuration details for production-ready setup
+- Updated middleware section to reflect disabled authentication middleware
+- Revised security considerations to reflect public API endpoints
+- Updated deployment configuration for production environments
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -29,6 +35,8 @@
 ## Introduction
 This document provides comprehensive API documentation for the PentexOne RFID/NFC access control scanning and analysis endpoints. It covers RFID card scanning operations, NFC tag analysis, access control system auditing, and security risk assessment for credential-based systems. The documentation includes endpoint definitions, request/response schemas, integration patterns, and practical workflows for security analysis and reporting.
 
+**Updated**: The authentication system has been removed as part of the production-ready configuration. All endpoints are now publicly accessible without authentication requirements.
+
 ## Project Structure
 The backend is organized around a FastAPI application with modular routers. The access control module resides under the routers package and integrates with the database and security engine to evaluate risk and persist results.
 
@@ -40,25 +48,22 @@ A --> D["security_engine.py<br/>Risk calculation"]
 A --> E["routers/reports.py<br/>Audit report generation"]
 A --> F["websocket_manager.py<br/>WebSocket broadcast"]
 A --> G["static/index.html<br/>Dashboard UI"]
-A --> H["static/login.html<br/>Authentication UI"]
 B --> C
 B --> D
 E --> C
 ```
 
 **Diagram sources**
-- [main.py:1-106](file://backend/main.py#L1-L106)
+- [main.py:1-145](file://backend/main.py#L1-L145)
 - [access_control.py:1-95](file://backend/routers/access_control.py#L1-L95)
 - [database.py:1-80](file://backend/database.py#L1-L80)
 - [security_engine.py:1-425](file://backend/security_engine.py#L1-L425)
 - [reports.py:1-158](file://backend/routers/reports.py#L1-L158)
-- [websocket_manager.py:1-48](file://backend/websocket_manager.py#L1-L48)
-- [index.html:1-413](file://backend/static/index.html#L1-L413)
-- [login.html:1-209](file://backend/static/login.html#L1-L209)
+- [websocket_manager.py:1-56](file://backend/websocket_manager.py#L1-L56)
+- [index.html:1-716](file://backend/static/index.html#L1-L716)
 
 **Section sources**
 - [main.py:14-48](file://backend/main.py#L14-L48)
-- [README.md:276-297](file://backend/README.md#L276-L297)
 
 ## Core Components
 - Access Control Router: Implements RFID scanning, card listing, and cleanup endpoints.
@@ -66,6 +71,9 @@ E --> C
 - Security Engine: Computes risk scores and flags for RFID/NFC vulnerabilities.
 - Reports Router: Generates PDF audit reports including RFID/NFC findings.
 - Frontend Integration: Dashboard UI triggers RFID scans and displays results.
+- CORS Middleware: Implements production-ready CORS configuration with configurable origins.
+
+**Updated**: Authentication system has been removed. All endpoints are now publicly accessible.
 
 **Section sources**
 - [access_control.py:13-95](file://backend/routers/access_control.py#L13-L95)
@@ -75,7 +83,7 @@ E --> C
 - [index.html:318-344](file://backend/static/index.html#L318-L344)
 
 ## Architecture Overview
-The RFID access control flow integrates hardware or simulated input, risk evaluation, persistence, and reporting.
+The RFID access control flow integrates hardware or simulated input, risk evaluation, persistence, and reporting with a production-ready CORS configuration.
 
 ```mermaid
 sequenceDiagram
@@ -108,7 +116,7 @@ API->>WS : broadcast heartbeat
 - [access_control.py:47-84](file://backend/routers/access_control.py#L47-L84)
 - [security_engine.py:202-339](file://backend/security_engine.py#L202-L339)
 - [database.py:44-55](file://backend/database.py#L44-L55)
-- [main.py:90-101](file://backend/main.py#L90-L101)
+- [main.py:127-144](file://backend/main.py#L127-L144)
 
 ## Detailed Component Analysis
 
@@ -254,13 +262,38 @@ end
 ```
 
 **Diagram sources**
-- [main.py:90-101](file://backend/main.py#L90-L101)
+- [main.py:114-125](file://backend/main.py#L114-L125)
 - [websocket_manager.py:7-47](file://backend/websocket_manager.py#L7-L47)
 
 **Section sources**
 - [index.html:318-344](file://backend/static/index.html#L318-L344)
-- [main.py:90-101](file://backend/main.py#L90-L101)
+- [main.py:114-125](file://backend/main.py#L114-L125)
 - [websocket_manager.py:7-47](file://backend/websocket_manager.py#L7-L47)
+
+### CORS Configuration and Production Deployment
+**New Section**: The application now implements a production-ready CORS configuration with configurable origins.
+
+- CORS Origins: Configurable via environment variable `PENTEX_CORS_ORIGINS`
+- Default Origins: Allows localhost and LAN access for development
+- Production Usage: Set to specific domains for production deployments
+- Security: Restricts cross-origin requests to configured origins only
+
+**Section sources**
+- [main.py:48-66](file://backend/main.py#L48-L66)
+
+### Authentication System Removal
+**Updated**: The experimental authentication system has been completely removed from the application.
+
+- Removed Login Endpoint: No longer available
+- Removed Login Page: No longer exists
+- Removed Authentication Middleware: Disabled for development
+- Public Endpoints: All API endpoints are now publicly accessible
+- Security Implications: Requires external security measures for production deployments
+
+**Section sources**
+- [main.py:39-44](file://backend/main.py#L39-L44)
+- [main.py:74-76](file://backend/main.py#L74-L76)
+- [main.py:108-112](file://backend/main.py#L108-L112)
 
 ## Dependency Analysis
 - Access Control Router depends on:
@@ -288,7 +321,7 @@ API --> Reports
 - [security_engine.py:1-425](file://backend/security_engine.py#L1-L425)
 - [models.py:1-71](file://backend/models.py#L1-L71)
 - [reports.py:12-13](file://backend/routers/reports.py#L12-L13)
-- [index.html:1-413](file://backend/static/index.html#L1-L413)
+- [index.html:1-716](file://backend/static/index.html#L1-L716)
 - [main.py:14-48](file://backend/main.py#L14-L48)
 
 **Section sources**
@@ -299,6 +332,8 @@ API --> Reports
 - Simulation mode reduces hardware dependencies and latency for development/testing.
 - Risk calculation is lightweight and suitable for real-time feedback.
 - Database writes are minimal per scan; batching operations can reduce overhead if scaling.
+- CORS middleware adds minimal overhead for cross-origin request handling.
+- WebSocket connections maintained for real-time monitoring.
 
 ## Troubleshooting Guide
 - RFID scan returns error indicating no hardware found:
@@ -307,14 +342,18 @@ API --> Reports
   - Verify permissions and port availability; ensure the reader is compatible and powered.
 - Risk assessment appears inconsistent:
   - Confirm the presence of RFID-specific flags and adjust simulation/test data accordingly.
+- CORS errors in browser console:
+  - Configure `PENTEX_CORS_ORIGINS` environment variable with your frontend domain(s).
+- Authentication errors:
+  - Authentication system has been removed; all endpoints are now public.
 
 **Section sources**
 - [access_control.py:57-64](file://backend/routers/access_control.py#L57-L64)
 - [access_control.py:29-45](file://backend/routers/access_control.py#L29-L45)
-- [README.md:349-381](file://backend/README.md#L349-L381)
+- [main.py:48-66](file://backend/main.py#L48-L66)
 
 ## Conclusion
-The Access Control API provides a focused set of endpoints for RFID/NFC scanning, risk evaluation, and auditing. It integrates seamlessly with the broader PentexOne platform, enabling operators to assess credential-based access systems, track card inventories, and generate comprehensive security reports.
+The Access Control API provides a focused set of endpoints for RFID/NFC scanning, risk evaluation, and auditing. It integrates seamlessly with the broader PentexOne platform, enabling operators to assess credential-based access systems, track card inventories, and generate comprehensive security reports. The removal of the authentication system simplifies deployment while requiring external security measures for production environments.
 
 ## Appendices
 
@@ -354,12 +393,14 @@ The Access Control API provides a focused set of endpoints for RFID/NFC scanning
   - Description: Maintains persistent connection for heartbeat messages.
   - Messages: {"event":"heartbeat","status":"active"}
 
+**Updated**: Authentication endpoints (login, logout) are no longer available.
+
 **Section sources**
 - [access_control.py:47-94](file://backend/routers/access_control.py#L47-L94)
 - [models.py:55-66](file://backend/models.py#L55-L66)
-- [main.py:50-64](file://backend/main.py#L50-L64)
+- [main.py:78-92](file://backend/main.py#L78-L92)
 - [reports.py:37-157](file://backend/routers/reports.py#L37-L157)
-- [main.py:90-101](file://backend/main.py#L90-L101)
+- [main.py:114-125](file://backend/main.py#L114-L125)
 
 ### Request/Response Schemas
 
@@ -386,7 +427,7 @@ The Access Control API provides a focused set of endpoints for RFID/NFC scanning
   - Integrate with broader device analytics for correlation.
 
 - Security Recommendation Generation
-  - Leverage security engine’s vulnerability mapping to suggest remediation steps.
+  - Leverage security engine's vulnerability mapping to suggest remediation steps.
   - Use AI engine recommendations for protocol-specific improvements.
 
 - Integration with Physical Security Systems
@@ -397,3 +438,16 @@ The Access Control API provides a focused set of endpoints for RFID/NFC scanning
 - [security_engine.py:156-163](file://backend/security_engine.py#L156-L163)
 - [reports.py:138-154](file://backend/routers/reports.py#L138-L154)
 - [index.html:318-344](file://backend/static/index.html#L318-L344)
+
+### Production Deployment Configuration
+
+**New Section**: Environment variables for production deployment.
+
+- PENTEX_CORS_ORIGINS: Comma-separated list of allowed origins (e.g., "https://yourdomain.com,http://192.168.1.100:8000")
+- PENTEX_RELOAD: Enable/disable hot reload (default: false)
+- PENTEX_WORKERS: Number of worker processes (default: 1 for Raspberry Pi 5)
+- Database: SQLite by default, can be configured for production databases
+
+**Section sources**
+- [main.py:48-66](file://backend/main.py#L48-L66)
+- [main.py:127-144](file://backend/main.py#L127-L144)
