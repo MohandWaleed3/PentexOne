@@ -227,18 +227,33 @@ def detect_all_dongles() -> dict:
         print(f"   Manufacturer: {port.manufacturer or 'Unknown'}")
         print(f"   Serial Number: {port.serial_number or 'Unknown'}")
         
-        # Detect Zigbee dongles
-        if any(x in desc_upper or x in hwid_upper for x in ['CC2652', 'CC2531', 'ZIGBEE', 'TI', 'CP210', 'SILICON LABS']):
-            if 'CC2652' in desc_upper or 'CC2531' in desc_upper:
-                dongles['zigbee'] = {
-                    'port': port.device,
-                    'type': 'Zigbee',
-                    'chip': 'CC2652P' if 'CC2652' in desc_upper else 'CC2531',
-                    'description': port.description,
-                    'manufacturer': port.manufacturer or 'Unknown',
-                    'status': 'CONNECTED ✅'
-                }
-                print(f"   ✅ DETECTED: Zigbee Dongle ({dongles['zigbee']['chip']})")
+        # Detect Zigbee dongles — check description, hwid, manufacturer, and VID:PID
+        mfr_upper = (port.manufacturer or '').upper()
+        is_zigbee = any(x in desc_upper or x in hwid_upper for x in ['CC2652', 'CC2531', 'ZIGBEE', 'CP210', 'SILICON LABS', 'CH340', 'SONOFF'])
+        # Also match by USB VID:PID for TI CC2531 (0451:16A8) and CP2102 (10C4:EA60)
+        if not is_zigbee and port.vid:
+            if (port.vid == 0x0451 and port.pid == 0x16A8):  # TI CC2531
+                is_zigbee = True
+            elif (port.vid == 0x10C4 and port.pid == 0xEA60):  # Silicon Labs CP2102 (Sonoff)
+                is_zigbee = True
+        # Also match by manufacturer name
+        if not is_zigbee and any(x in mfr_upper for x in ['TEXAS INSTRUMENTS', 'SILICON LABS']):
+            is_zigbee = True
+        # Also match 'TI ' (with space) in description to avoid false positives
+        if not is_zigbee and 'TI ' in desc_upper:
+            is_zigbee = True
+            
+        if is_zigbee:
+            chip = 'CC2652P' if 'CC2652' in desc_upper else ('CC2531' if ('CC2531' in desc_upper or (port.vid == 0x0451)) else 'CP210x / CH340 / Silicon Labs')
+            dongles['zigbee'] = {
+                'port': port.device,
+                'type': 'Zigbee',
+                'chip': chip,
+                'description': port.description,
+                'manufacturer': port.manufacturer or 'Unknown',
+                'status': 'CONNECTED ✅'
+            }
+            print(f"   ✅ DETECTED: Zigbee Dongle ({dongles['zigbee']['chip']})")
         
         # Detect Thread/Matter dongles
         if any(x in desc_upper or x in hwid_upper for x in ['NRF', 'NORDIC', 'THREAD', 'MATTER', 'JLINK', '52840']):
@@ -333,7 +348,9 @@ def detect_zigbee_dongle() -> Optional[str]:
     """Detect Zigbee dongle (CC2652P, CC2531, etc.)"""
     ports = serial.tools.list_ports.comports()
     for port in ports:
-        if any(x in port.description.upper() for x in ['CC2652', 'CC2531', 'ZIGBEE', 'TI', 'CP210']):
+        desc = port.description.upper()
+        hwid = port.hwid.upper() if port.hwid else ""
+        if any(x in desc or x in hwid for x in ['CC2652', 'CC2531', 'ZIGBEE', 'TI', 'CP210', 'SILICON LABS', 'CH340', 'SONOFF']):
             return port.device
     return None
 
@@ -786,9 +803,15 @@ async def start_zigbee_scan(background_tasks: BackgroundTasks):
     has_killerbee = check_killerbee_available()
     
     if dongle_port and has_killerbee:
+        # Best case: dongle + KillerBee library
         background_tasks.add_task(run_zigbee_scan_real, dongle_port)
-        return ScanStatus(status="started", message=f"Real Zigbee scan started on {dongle_port}...", devices_found=0)
+        return ScanStatus(status="started", message=f"Real Zigbee scan (KillerBee) on {dongle_port}...", devices_found=0)
+    elif dongle_port:
+        # Dongle present but no KillerBee — use direct serial sniffing
+        background_tasks.add_task(run_zigbee_scan_serial, dongle_port)
+        return ScanStatus(status="started", message=f"Real Zigbee scan (serial) on {dongle_port}...", devices_found=0)
     else:
+        # No dongle at all — simulation
         background_tasks.add_task(run_zigbee_scan_simulated)
         return ScanStatus(status="started", message="Simulated Zigbee scan (no hardware detected)...", devices_found=0)
 
@@ -848,6 +871,176 @@ def run_zigbee_scan_real(port: str):
         scan_state["running"] = False
         scan_state["progress"] = 100
         manager.broadcast({"event": "scan_finished", "type": "zigbee", "count": scan_state.get("devices_found", 0)})
+        db.close()
+
+
+def run_zigbee_scan_serial(port: str):
+    """
+    Real Zigbee scanning via direct serial communication with CC2531/CC2652 dongle.
+    Uses raw serial I/O to read IEEE 802.15.4 frames without KillerBee.
+    """
+    db = SessionLocal()
+    scan_state["running"] = True
+    scan_state["progress"] = 0
+    scan_state["devices_found"] = 0
+
+    discovered = []
+    discovered_macs = set()
+
+    try:
+        scan_state["message"] = f"Opening serial port {port}..."
+        manager.broadcast({"event": "scan_progress", "progress": 5, "message": scan_state["message"]})
+        logger.info(f"[Zigbee Serial] Opening {port}")
+
+        ser = serial.Serial(port, baudrate=115200, timeout=1)
+        time.sleep(0.5)  # let the dongle initialise
+
+        # Try to read firmware identifier / flush startup garbage
+        ser.reset_input_buffer()
+
+        # Scan across the 16 standard Zigbee channels (11-26)
+        channels_to_scan = list(range(11, 27))
+        total_channels = len(channels_to_scan)
+
+        for ch_idx, channel in enumerate(channels_to_scan):
+            progress = 10 + int((ch_idx / total_channels) * 80)
+            scan_state["progress"] = progress
+            scan_state["message"] = f"Sniffing Zigbee channel {channel} ({ch_idx+1}/{total_channels})..."
+            manager.broadcast({"event": "scan_progress", "progress": progress, "message": scan_state["message"]})
+            logger.info(f"[Zigbee Serial] Channel {channel}")
+
+            # Send channel-set command (TI CC2531 sniffer firmware protocol)
+            # Format: 0xFE <len> <cmd0> <cmd1> <channel> <FCS>
+            try:
+                set_ch_cmd = bytes([0xFE, 0x01, 0x21, 0x04, channel])
+                fcs = 0
+                for b in set_ch_cmd[1:]:
+                    fcs ^= b
+                set_ch_cmd += bytes([fcs])
+                ser.write(set_ch_cmd)
+                time.sleep(0.1)
+            except Exception as e:
+                logger.debug(f"[Zigbee Serial] Channel set cmd failed: {e}")
+
+            # Listen on this channel for ~0.6 seconds
+            end_time = time.time() + 0.6
+            while time.time() < end_time:
+                try:
+                    raw = ser.read(256)
+                    if not raw:
+                        continue
+
+                    # Parse raw bytes looking for IEEE 802.15.4 source addresses
+                    # A minimal 802.15.4 data frame has: FC (2) + Seq (1) + DstPAN (2) + DstAddr + SrcAddr
+                    for offset in range(len(raw) - 10):
+                        # Look for 802.15.4 frame control patterns (data frame = 0x01 or 0x41 in low nibble)
+                        fc_low = raw[offset] & 0x07  # frame type
+                        if fc_low not in (0x01, 0x03):  # data or command frame
+                            continue
+
+                        src_addr_mode = (raw[offset + 1] >> 6) & 0x03 if offset + 1 < len(raw) else 0
+
+                        if src_addr_mode == 2 and offset + 9 < len(raw):
+                            # Short address (2 bytes), after seq(1) + dst_pan(2) + dst_short(2)
+                            src_hi = raw[offset + 8]
+                            src_lo = raw[offset + 7]
+                            src_pan_hi = raw[offset + 4]
+                            src_pan_lo = raw[offset + 3]
+                            mac_str = f"{src_pan_hi:02X}:{src_pan_lo:02X}:{src_hi:02X}:{src_lo:02X}"
+                            if mac_str not in discovered_macs and mac_str != "00:00:00:00" and mac_str != "FF:FF:FF:FF":
+                                discovered_macs.add(mac_str)
+                                dev_info = {
+                                    "mac": mac_str,
+                                    "hostname": f"Zigbee Device {mac_str[-5:]}",
+                                    "vendor": "Unknown",
+                                    "channel": channel,
+                                }
+                                discovered.append(dev_info)
+                                scan_state["devices_found"] = len(discovered)
+                                logger.info(f"[Zigbee Serial] Found device: {mac_str} on ch{channel}")
+                                manager.broadcast({
+                                    "event": "device_found",
+                                    "device": {
+                                        "hostname": dev_info["hostname"],
+                                        "ip": f"ZB:{mac_str}",
+                                        "risk_level": "MEDIUM",
+                                    }
+                                })
+
+                        elif src_addr_mode == 3 and offset + 15 < len(raw):
+                            # Extended address (8 bytes IEEE EUI-64)
+                            eui_bytes = raw[offset + 7 : offset + 15]
+                            mac_str = ":".join(f"{b:02X}" for b in reversed(eui_bytes))
+                            if mac_str not in discovered_macs and mac_str != "00:00:00:00:00:00:00:00":
+                                discovered_macs.add(mac_str)
+                                dev_info = {
+                                    "mac": mac_str,
+                                    "hostname": f"Zigbee Device {mac_str[-5:]}",
+                                    "vendor": "Unknown",
+                                    "channel": channel,
+                                }
+                                discovered.append(dev_info)
+                                scan_state["devices_found"] = len(discovered)
+                                logger.info(f"[Zigbee Serial] Found device (EUI-64): {mac_str} on ch{channel}")
+                                manager.broadcast({
+                                    "event": "device_found",
+                                    "device": {
+                                        "hostname": dev_info["hostname"],
+                                        "ip": f"ZB:{mac_str}",
+                                        "risk_level": "MEDIUM",
+                                    }
+                                })
+
+                except serial.SerialException:
+                    break
+                except Exception as e:
+                    logger.debug(f"[Zigbee Serial] Parse error: {e}")
+
+        ser.close()
+        logger.info(f"[Zigbee Serial] Scan complete. {len(discovered)} devices found.")
+
+        # Persist discovered devices to DB
+        for dev in discovered:
+            risk_result = calculate_risk([], "Zigbee", {"ZIGBEE_DEFAULT_KEY": True})
+            device_id = f"ZB:{dev['mac']}"
+            existing = db.query(Device).filter(Device.ip == device_id).first()
+            if not existing:
+                device = Device(
+                    ip=device_id,
+                    mac=dev["mac"],
+                    hostname=dev["hostname"],
+                    vendor=dev.get("vendor", "Unknown"),
+                    protocol="Zigbee",
+                    risk_level=risk_result["risk_level"],
+                    risk_score=risk_result["risk_score"],
+                    last_seen=datetime.utcnow(),
+                )
+                db.add(device)
+                db.flush()
+                for v in risk_result["vulnerabilities"]:
+                    db.add(Vulnerability(
+                        device_id=device.id,
+                        vuln_type=v["vuln_type"],
+                        severity=v["severity"],
+                        description=v["description"],
+                        protocol="Zigbee",
+                    ))
+                db.commit()
+
+        scan_state["message"] = f"Zigbee serial scan complete — {len(discovered)} device(s) found on {port}."
+
+    except serial.SerialException as e:
+        logger.error(f"[Zigbee Serial] Serial error: {e}")
+        scan_state["message"] = f"Zigbee serial error: {str(e)}"
+        manager.broadcast({"event": "scan_error", "message": f"Serial error: {str(e)}"})
+    except Exception as e:
+        logger.error(f"[Zigbee Serial] Error: {e}")
+        scan_state["message"] = f"Zigbee scan error: {str(e)}"
+        manager.broadcast({"event": "scan_error", "message": str(e)})
+    finally:
+        scan_state["running"] = False
+        scan_state["progress"] = 100
+        manager.broadcast({"event": "scan_finished", "type": "zigbee", "count": len(discovered)})
         db.close()
 
 
@@ -1169,15 +1362,41 @@ async def get_hardware_status():
     # Get detailed dongle detection
     dongles = detect_all_dongles()
     
+    # Fallback: use simpler detection if detect_all_dongles missed something
+    zigbee_port = detect_zigbee_dongle()
+    if zigbee_port and not dongles['zigbee']:
+        dongles['zigbee'] = {
+            'port': zigbee_port,
+            'type': 'Zigbee',
+            'chip': 'CC2531/CC2652',
+            'description': 'Detected via fallback',
+            'manufacturer': 'Unknown',
+            'status': 'CONNECTED ✅'
+        }
+        logger.info(f"[HW Status] Zigbee dongle found via fallback: {zigbee_port}")
+    
+    thread_port = detect_thread_dongle()
+    if thread_port and not dongles['thread']:
+        dongles['thread'] = {
+            'port': thread_port,
+            'type': 'Thread/Matter',
+            'chip': 'nRF52840',
+            'description': 'Detected via fallback',
+            'manufacturer': 'Nordic',
+            'status': 'CONNECTED ✅'
+        }
+    
+    zigbee_connected = dongles['zigbee'] is not None
+    
     return {
         "status": "success",
         "dongles": dongles,
         "summary": {
             "zigbee": {
-                "connected": dongles['zigbee'] is not None,
-                "port": dongles['zigbee']['port'] if dongles['zigbee'] else None,
-                "chip": dongles['zigbee']['chip'] if dongles['zigbee'] else None,
-                "ready": dongles['zigbee'] is not None and check_killerbee_available()
+                "connected": zigbee_connected,
+                "port": dongles['zigbee']['port'] if zigbee_connected else None,
+                "chip": dongles['zigbee']['chip'] if zigbee_connected else None,
+                "ready": zigbee_connected  # Ready for serial scan even without KillerBee
             },
             "thread": {
                 "connected": dongles['thread'] is not None,

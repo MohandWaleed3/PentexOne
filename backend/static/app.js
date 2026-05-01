@@ -54,6 +54,11 @@ const app = {
             this.fetchSummary();
         }, interval);
         
+        // Refresh hardware status every 0.1 seconds
+        this.hwRefreshInterval = setInterval(() => {
+            this.fetchHardwareStatus();
+        }, 100);
+        
         console.log(`[AutoRefresh] Started - will refresh every ${interval/1000} seconds`);
     },
     
@@ -918,35 +923,70 @@ const app = {
             const res = await authFetch(`${API_BASE}/iot/hardware/status`);
             if (res.ok) {
                 const data = await res.json();
+                console.log('[HW Status] API response:', JSON.stringify(data.summary));
                 this.updateHardwareStatus(data);
+            } else {
+                console.warn('[HW Status] API returned non-OK:', res.status);
             }
         } catch (e) {
-            console.error("Failed to fetch hardware status", e);
+            console.error("[HW Status] Failed to fetch hardware status", e);
         }
     },
 
     updateHardwareStatus(data) {
         const container = document.getElementById('hardwareStatus');
-        if (!container) return;
+        if (!container) {
+            console.warn('[HW Status] Container #hardwareStatus not found');
+            return;
+        }
+        
+        // Extract data from multiple possible paths
+        const summary = data.summary || {};
+        const dongles = data.dongles || {};
+        
+        // Zigbee: try summary first, then dongles
+        const zigbeeConnected = summary.zigbee?.connected || (dongles.zigbee !== null && dongles.zigbee !== undefined);
+        const zigbeePort = summary.zigbee?.port || dongles.zigbee?.port || '';
+        const zigbeeChip = summary.zigbee?.chip || dongles.zigbee?.chip || '';
+        const zigbeeReady = summary.zigbee?.ready || false;
+        
+        // Thread
+        const threadConnected = summary.thread?.connected || (dongles.thread !== null && dongles.thread !== undefined);
+        const threadPort = summary.thread?.port || dongles.thread?.port || '';
+        
+        // Z-Wave
+        const zwaveConnected = summary.zwave?.connected || (dongles.zwave !== null && dongles.zwave !== undefined);
+        const zwavePort = summary.zwave?.port || dongles.zwave?.port || '';
+        
+        // Bluetooth
+        const btConnected = summary.bluetooth?.connected || (dongles.bluetooth !== null && dongles.bluetooth !== undefined);
+        
+        console.log(`[HW Status] Zigbee: connected=${zigbeeConnected}, port=${zigbeePort}, chip=${zigbeeChip}, ready=${zigbeeReady}`);
         
         let html = '<div style="display: flex; flex-wrap: wrap; gap: 10px;">';
         
         // Zigbee dongle
-        html += `<div class="hw-status-item ${data.zigbee_dongle?.connected ? 'connected' : 'disconnected'}">
+        html += `<div class="hw-status-item ${zigbeeConnected ? 'connected' : 'disconnected'}">
             <i class="fa-solid fa-usb"></i>
-            <span>Zigbee: ${data.zigbee_dongle?.connected ? data.zigbee_dongle.port : 'Not Connected'}</span>
+            <span>Zigbee: ${zigbeeConnected ? zigbeePort + ' (' + zigbeeChip + ')' : 'Not Connected'}</span>
         </div>`;
         
         // Thread dongle
-        html += `<div class="hw-status-item ${data.thread_dongle?.connected ? 'connected' : 'disconnected'}">
+        html += `<div class="hw-status-item ${threadConnected ? 'connected' : 'disconnected'}">
             <i class="fa-solid fa-usb"></i>
-            <span>Thread: ${data.thread_dongle?.connected ? data.thread_dongle.port : 'Not Connected'}</span>
+            <span>Thread: ${threadConnected ? threadPort : 'Not Connected'}</span>
         </div>`;
         
-        // KillerBee
-        html += `<div class="hw-status-item ${data.killerbee_available ? 'connected' : 'disconnected'}">
-            <i class="fa-solid fa-code"></i>
-            <span>KillerBee: ${data.killerbee_available ? 'Available' : 'Not Installed'}</span>
+        // Z-Wave dongle
+        html += `<div class="hw-status-item ${zwaveConnected ? 'connected' : 'disconnected'}">
+            <i class="fa-solid fa-usb"></i>
+            <span>Z-Wave: ${zwaveConnected ? zwavePort : 'Not Connected'}</span>
+        </div>`;
+        
+        // Bluetooth
+        html += `<div class="hw-status-item connected">
+            <i class="fa-brands fa-bluetooth-b"></i>
+            <span>Bluetooth: Built-in</span>
         </div>`;
         
         html += '</div>';

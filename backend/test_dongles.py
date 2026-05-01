@@ -39,13 +39,15 @@ def detect_all_dongles():
         print(f"   Serial Number: {port.serial_number or 'Unknown'}")
         
         # Detect Zigbee dongles
-        if any(x in desc_upper or x in hwid_upper for x in ['CC2652', 'CC2531', 'ZIGBEE', 'TI', 'CP210', 'SILICON LABS']):
-            chip = 'CC2652P' if 'CC2652' in desc_upper else 'CC2531'
+        if any(x in desc_upper or x in hwid_upper for x in ['CC2652', 'CC2531', 'ZIGBEE', 'TI', 'CP210', 'SILICON LABS', 'CH340', 'SONOFF']):
+            chip = 'CC2652P' if 'CC2652' in desc_upper else ('CC2531' if 'CC2531' in desc_upper else 'CP210x / CH340 / Silicon Labs')
             dongles['zigbee'] = {
                 'port': port.device,
+                'type': 'Zigbee',
                 'chip': chip,
                 'description': port.description,
-                'status': '✅ CONNECTED'
+                'manufacturer': port.manufacturer or 'Unknown',
+                'status': 'CONNECTED ✅'
             }
             print(f"   ✅ DETECTED: Zigbee Dongle ({chip})")
         
