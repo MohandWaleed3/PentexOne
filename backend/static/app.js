@@ -44,9 +44,9 @@ const app = {
     },
     
     startAutoRefresh() {
-        // Refresh devices and summary every 5 seconds (10s if lightweight)
+        // Refresh devices and summary every 2 seconds for faster display
         const isLightweight = document.body.classList.contains('lightweight-mode');
-        const interval = isLightweight ? 10000 : 5000;
+        const interval = isLightweight ? 5000 : 2000;
         
         this.refreshInterval = setInterval(() => {
             // Only refresh if no scan is currently running
@@ -54,10 +54,10 @@ const app = {
             this.fetchSummary();
         }, interval);
         
-        // Refresh hardware status every 0.1 seconds
+        // Refresh hardware status every 2 seconds to quickly detect plugged dongles
         this.hwRefreshInterval = setInterval(() => {
             this.fetchHardwareStatus();
-        }, 100);
+        }, 2000);
         
         console.log(`[AutoRefresh] Started - will refresh every ${interval/1000} seconds`);
     },

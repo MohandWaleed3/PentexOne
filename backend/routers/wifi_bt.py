@@ -321,15 +321,22 @@ async def full_device_scan(ip: str, background_tasks: BackgroundTasks):
 # 5. فحص أجهزة البلوتوث (BLE)
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/bluetooth", response_model=ScanStatus)
-async def start_bluetooth_scan(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def start_bluetooth_scan(background_tasks: BackgroundTasks):
     if not HAS_BLEAK:
         return ScanStatus(status="error", message="مكتبة bleak غير متوفرة أو البلوتوث غير مدعوم على هذا النظام")
-    background_tasks.add_task(run_bluetooth_scan, db)
+    background_tasks.add_task(run_bluetooth_scan)
     return ScanStatus(status="started", message="جارٍ البحث عن أجهزة البلوتوث (BLE) المجاورة...")
 
 
-async def run_bluetooth_scan(db: Session):
+async def run_bluetooth_scan():
+    db = SessionLocal()
     try:
+        manager.broadcast({
+            "event": "scan_start",
+            "type": "bluetooth",
+            "message": "Starting Bluetooth BLE scan..."
+        })
+        
         devices = await BleakScanner.discover(timeout=5.0)
         for dev in devices:
             mac = dev.address
@@ -376,8 +383,21 @@ async def run_bluetooth_scan(db: Session):
                     protocol="Bluetooth"
                 ))
             db.commit()
+            
+        manager.broadcast({
+            "event": "scan_complete",
+            "type": "bluetooth",
+            "message": f"Bluetooth scan complete. Found {len(devices)} devices."
+        })
     except Exception as e:
         logger.error(f"BLE Scan Error: {e}")
+        manager.broadcast({
+            "event": "scan_error",
+            "type": "bluetooth",
+            "message": f"Error during Bluetooth scan: {str(e)}"
+        })
+    finally:
+        db.close()
 
 
 # ────────────────────────────────────────────────────────────

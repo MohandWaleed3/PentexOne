@@ -213,19 +213,13 @@ def detect_all_dongles() -> dict:
         'other_usb_serials': []
     }
     
-    print("\n" + "="*60)
-    print("🔍 SCANNING FOR HARDWARE DONGLES...")
-    print("="*60)
+    logger.debug("🔍 SCANNING FOR HARDWARE DONGLES...")
     
     for port in ports:
         desc_upper = port.description.upper()
         hwid_upper = port.hwid.upper() if port.hwid else ""
         
-        print(f"\n📍 Found: {port.device}")
-        print(f"   Description: {port.description}")
-        print(f"   HWID: {port.hwid}")
-        print(f"   Manufacturer: {port.manufacturer or 'Unknown'}")
-        print(f"   Serial Number: {port.serial_number or 'Unknown'}")
+        logger.debug(f"📍 Found: {port.device}")
         
         # Detect Zigbee dongles — check description, hwid, manufacturer, and VID:PID
         mfr_upper = (port.manufacturer or '').upper()
@@ -253,7 +247,7 @@ def detect_all_dongles() -> dict:
                 'manufacturer': port.manufacturer or 'Unknown',
                 'status': 'CONNECTED ✅'
             }
-            print(f"   ✅ DETECTED: Zigbee Dongle ({dongles['zigbee']['chip']})")
+            logger.info(f"✅ DETECTED: Zigbee Dongle ({dongles['zigbee']['chip']}) on {port.device}")
         
         # Detect Thread/Matter dongles
         if any(x in desc_upper or x in hwid_upper for x in ['NRF', 'NORDIC', 'THREAD', 'MATTER', 'JLINK', '52840']):
@@ -266,7 +260,7 @@ def detect_all_dongles() -> dict:
                     'manufacturer': port.manufacturer or 'Nordic',
                     'status': 'CONNECTED ✅'
                 }
-                print(f"   ✅ DETECTED: Thread/Matter Dongle (nRF52840)")
+                logger.info(f"✅ DETECTED: Thread/Matter Dongle (nRF52840) on {port.device}")
         
         # Detect Z-Wave dongles
         if any(x in desc_upper or x in hwid_upper for x in ['ZWAVE', 'Z-WAVE', 'AEOTEC', 'Z-STICK', 'SIGMA']):
@@ -278,7 +272,7 @@ def detect_all_dongles() -> dict:
                 'manufacturer': port.manufacturer or 'Aeotec',
                 'status': 'CONNECTED ✅'
             }
-            print(f"   ✅ DETECTED: Z-Wave Dongle")
+            logger.info(f"✅ DETECTED: Z-Wave Dongle on {port.device}")
         
         # Detect Bluetooth dongles
         if any(x in desc_upper or x in hwid_upper for x in ['BLUETOOTH', 'CSR', 'BROADCOM', 'INTEL BT']):
@@ -290,7 +284,7 @@ def detect_all_dongles() -> dict:
                 'manufacturer': port.manufacturer or 'Unknown',
                 'status': 'CONNECTED ✅'
             }
-            print(f"   ✅ DETECTED: Bluetooth Adapter")
+            logger.info(f"✅ DETECTED: Bluetooth Adapter on {port.device}")
         
         # Add to other serials if not detected as known dongle
         if not any([dongles['zigbee'] and dongles['zigbee']['port'] == port.device,
@@ -304,43 +298,11 @@ def detect_all_dongles() -> dict:
                     'manufacturer': port.manufacturer or 'Unknown'
                 })
     
-    # Summary
-    print("\n" + "="*60)
-    print("📊 DETECTION SUMMARY")
-    print("="*60)
+    # Summary (Log summary only at DEBUG level to keep terminal clean)
+    connected_count = sum(1 for k in ['zigbee', 'thread', 'zwave', 'bluetooth'] if dongles[k])
+    logger.debug(f"📊 Dongle Scan Summary: {connected_count} connected")
     
-    connected_count = 0
-    if dongles['zigbee']:
-        print(f"✅ Zigbee Dongle: {dongles['zigbee']['port']} ({dongles['zigbee']['chip']})")
-        connected_count += 1
-    else:
-        print("❌ Zigbee Dongle: NOT CONNECTED")
-    
-    if dongles['thread']:
-        print(f"✅ Thread/Matter Dongle: {dongles['thread']['port']} (nRF52840)")
-        connected_count += 1
-    else:
-        print("❌ Thread/Matter Dongle: NOT CONNECTED")
-    
-    if dongles['zwave']:
-        print(f"✅ Z-Wave Dongle: {dongles['zwave']['port']}")
-        connected_count += 1
-    else:
-        print("❌ Z-Wave Dongle: NOT CONNECTED")
-    
-    if dongles['bluetooth']:
-        print(f"✅ Bluetooth Adapter: {dongles['bluetooth']['port']}")
-        connected_count += 1
-    else:
-        print("ℹ️  Bluetooth: Using built-in (if available)")
-    
-    if dongles['other_usb_serials']:
-        print(f"\n📡 Other USB Serial Devices ({len(dongles['other_usb_serials'])}):")
-        for dev in dongles['other_usb_serials']:
-            print(f"   - {dev['port']}: {dev['description']}")
-    
-    print(f"\n🎯 Total Dongles Connected: {connected_count}")
-    print("="*60 + "\n")
+    return dongles
     
     return dongles
 
@@ -481,7 +443,9 @@ from websocket_manager import manager
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/wifi", response_model=ScanStatus)
 async def start_wifi_scan(request: ScanRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    logger.info(f"Received scan request for network: {request.network}")
     if scan_state["running"]:
+        logger.warning("Scan requested while another scan is already running")
         return ScanStatus(status="busy", message="فحص آخر جارٍ بالفعل", devices_found=scan_state["devices_found"])
 
     background_tasks.add_task(run_nmap_scan, request.network)
