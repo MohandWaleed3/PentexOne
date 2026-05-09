@@ -49,9 +49,32 @@ class RFIDCard(Base):
     card_type   = Column(String, default="Unknown") # Mifare, NFC, EM4100
     sak         = Column(String, default="")        # SAK value for Mifare
     data        = Column(String, default="")        # Dump of data if readable
+    encryption_type = Column(String, default="Unknown")
+    auth_mode       = Column(String, default="Unknown")
+    replay_protection = Column(String, default="Unknown")
+    tag_integrity   = Column(String, default="Unknown")
+    vulnerabilities_json = Column(String, default="[]")
     risk_level  = Column(String, default="UNKNOWN") # SAFE | RISK
     risk_score  = Column(Float, default=0.0)
     last_seen   = Column(DateTime, default=datetime.utcnow)
+
+class RFIDScanReport(Base):
+    __tablename__ = "rfid_scan_reports"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    uid             = Column(String)
+    card_type       = Column(String)
+    encryption_type = Column(String, default="Unknown")
+    auth_mode       = Column(String, default="Unknown")
+    replay_protection = Column(String, default="Unknown")
+    tag_integrity   = Column(String, default="Unknown")
+    risk_level      = Column(String, default="UNKNOWN")
+    vulnerabilities = Column(String, default="[]")    # JSON list
+    attack_type     = Column(String, nullable=True)  # For attack sim results
+    attack_result   = Column(String, nullable=True)
+    remediation     = Column(String, nullable=True)
+    simulation_status = Column(String, default="Real")
+    timestamp       = Column(DateTime, default=datetime.utcnow)
 
 class Setting(Base):
     __tablename__ = "settings"

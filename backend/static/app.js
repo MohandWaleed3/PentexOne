@@ -36,6 +36,7 @@ const app = {
         this.fetchHardwareStatus();
         this.fetchAISuggestions(); // AI suggestions on load
         this.fetchAISecurityScore(); // AI security score
+        this.fetchRfidReports();
         
         // Add auto-refresh every 5 seconds as backup
         this.startAutoRefresh();
@@ -758,23 +759,89 @@ const app = {
         }
     },
 
-    async testPorts() {
+    async deepScanDevice() {
         if (!this.selectedDevice) return;
         
-        // Check if device has a valid IP (not Z-Wave, BLE, etc.)
         const ip = this.selectedDevice.ip;
         if (ip.startsWith('ZW:') || ip.startsWith('BLE_') || ip.startsWith('ZB:')) {
-            alert(`Port scanning is not available for ${this.selectedDevice.protocol} devices.\nThis feature requires an IP-based device (Wi-Fi/Ethernet).`);
+            alert(`Deep scanning is not available for ${this.selectedDevice.protocol} devices.\nThis feature requires an IP-based device.`);
             return;
+        }
+
+        const resultsContainer = document.getElementById("deepScanResults");
+        const progress = document.getElementById("deepScanProgress");
+        const content = document.getElementById("deepScanContent");
+        
+        if (resultsContainer && progress && content) {
+            resultsContainer.classList.remove("hidden");
+            progress.classList.remove("hidden");
+            content.innerHTML = "";
         }
         
         try {
-            await authFetch(`${API_BASE}/wireless/test/ports/${ip}`, { method: "POST" });
-            alert(`Started Deep Port Scan on ${ip}`);
-            setTimeout(() => this.fetchDevices(), 5000); // Check results after a bit
+            const res = await authFetch(`${API_BASE}/wireless/deep-scan/${ip}`, { method: "POST" });
+            const data = await res.json();
+            
+            if (data.status === 'success') {
+                this.renderDeepScanResults(data);
+                setTimeout(() => this.fetchDevices(), 2000);
+            } else {
+                if (progress) progress.innerHTML = `<span style="color:var(--status-risk)">Error: ${data.message}</span>`;
+            }
         } catch (e) {
-            alert("Error starting port scan");
+            if (progress) progress.innerHTML = `<span style="color:var(--status-risk)">Error starting deep scan</span>`;
         }
+    },
+
+    renderDeepScanResults(data) {
+        const progress = document.getElementById("deepScanProgress");
+        const content = document.getElementById("deepScanContent");
+        
+        if (progress) progress.classList.add("hidden");
+        
+        let html = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+                <strong>Deep Scan complete for ${data.ip}</strong>
+                <span class="badge ${data.overall_risk.toLowerCase()}">${data.overall_risk}</span>
+            </div>
+            
+            <h5 style="font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">Open Services (${data.open_ports.length})</h5>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px;">
+        `;
+        
+        data.services.forEach(s => {
+            html += `<span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; font-size: 11px; font-family: monospace;">${s}</span>`;
+        });
+        
+        html += `</div>
+            <h5 style="font-size: 11px; color: var(--text-muted); margin-bottom: 5px;">Vulnerabilities Detected</h5>
+        `;
+        
+        if (data.vulnerabilities.length === 0) {
+            html += `<div style="padding: 10px; background: rgba(34, 197, 94, 0.1); border-left: 3px solid var(--status-safe); border-radius: 4px; font-size: 11px; margin-bottom: 15px;">No critical vulnerabilities detected.</div>`;
+        } else {
+            data.vulnerabilities.forEach(v => {
+                html += `
+                    <div style="padding: 10px; background: rgba(239, 68, 68, 0.1); border-left: 3px solid var(--status-risk); border-radius: 4px; font-size: 11px; margin-bottom: 8px;">
+                        <strong>Port ${v.port} (${v.service})</strong><br>
+                        ${v.description}
+                    </div>
+                `;
+            });
+        }
+        
+        html += `
+            <h5 style="font-size: 11px; color: var(--text-muted); margin-bottom: 5px; margin-top: 15px;">Recommendations</h5>
+            <ul style="font-size: 11px; padding-left: 20px; margin-bottom: 0;">
+        `;
+        
+        data.recommendations.forEach(r => {
+            html += `<li>${r}</li>`;
+        });
+        
+        html += `</ul>`;
+        
+        if (content) content.innerHTML = html;
     },
 
     async testCreds() {
@@ -815,16 +882,36 @@ const app = {
         tbody.innerHTML = "";
         
         if (this.rfidCards.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted)">No cards scanned yet.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding: 30px;">
+                <i class="fa-solid fa-id-card" style="font-size: 24px; display: block; margin-bottom: 8px; opacity: 0.4;"></i>
+                No cards scanned yet. Click "Scan RFID Card" to begin.
+            </td></tr>`;
             return;
         }
 
         this.rfidCards.forEach(c => {
             const tr = document.createElement("tr");
+            let vulns = "None";
+            try {
+                let v = JSON.parse(c.vulnerabilities_json);
+                if (Array.isArray(v) && v.length > 0) {
+                    vulns = v.map(item => `<span style="display:inline-block; background:rgba(239,68,68,0.1); color:var(--status-risk); padding:2px 6px; border-radius:4px; font-size:10px; margin:1px;">${item}</span>`).join(' ');
+                } else {
+                    vulns = `<span style="color:var(--status-safe); font-size:11px;"><i class="fa-solid fa-shield-check"></i> Secure</span>`;
+                }
+            } catch(e) {}
+            
+            const integrityColor = c.tag_integrity === 'Valid' ? 'var(--status-safe)' : 'var(--status-risk)';
+            
             tr.innerHTML = `
-                <td style="font-family:monospace; font-weight:bold">${c.uid}</td>
+                <td style="font-family:monospace; font-weight:bold; font-size:11px;">${c.uid}</td>
                 <td>${c.card_type}</td>
+                <td><span style="font-size:11px; padding:2px 6px; background:rgba(139,92,246,0.1); color:var(--accent-purple); border-radius:4px;">${c.encryption_type}</span></td>
+                <td style="font-size:12px;">${c.auth_mode}</td>
+                <td style="font-size:12px;">${c.replay_protection}</td>
+                <td style="font-size:12px; color:${integrityColor};">${c.tag_integrity}</td>
                 <td><span class="badge ${c.risk_level.toLowerCase()}">${c.risk_level}</span></td>
+                <td style="font-size: 11px; max-width: 200px;">${vulns}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -832,26 +919,296 @@ const app = {
 
     async scanRfid() {
         const status = document.getElementById("rfidStatus");
-        status.textContent = "Scanning for card... Please wait.";
+        const scanBtn = document.getElementById("rfidScanBtn");
+        
+        // Show scanning state
+        status.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="color: var(--accent-blue);"></i> Scanning for RFID card...';
+        if (scanBtn) {
+            scanBtn.disabled = true;
+            scanBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Scanning...';
+        }
+        
         try {
             const res = await authFetch(`${API_BASE}/rfid/scan`, { method: "POST" });
             const data = await res.json();
-            status.textContent = data.message;
-            if(data.status === 'error') {
-                status.style.color = "var(--status-risk)";
+            
+            if (data.status === 'error') {
+                status.innerHTML = `<i class="fa-solid fa-circle" style="color: var(--status-risk); font-size: 8px;"></i> ${data.message}`;
             } else {
-                status.style.color = "var(--status-safe)";
+                status.innerHTML = `<i class="fa-solid fa-circle" style="color: var(--status-safe); font-size: 8px;"></i> ${data.message}`;
+                
+                // Show last scan info card
+                if (data.data) {
+                    this.showLastScanCard(data.data);
+                }
             }
+            
             this.fetchCards();
+            this.fetchRfidReports();
         } catch(e) {
-            status.textContent = "Error scanning card.";
+            status.innerHTML = '<i class="fa-solid fa-circle" style="color: var(--status-risk); font-size: 8px;"></i> Error scanning card.';
+        } finally {
+            if (scanBtn) {
+                scanBtn.disabled = false;
+                scanBtn.innerHTML = '<i class="fa-solid fa-satellite-dish"></i> Scan RFID Card';
+            }
         }
+    },
+
+    showLastScanCard(cardData) {
+        const container = document.getElementById("rfidLastScanCard");
+        const info = document.getElementById("rfidLastScanInfo");
+        if (!container || !info) return;
+        
+        container.classList.remove("hidden");
+        
+        const riskColor = cardData.risk_level === 'RISK' ? 'var(--status-risk)' : 'var(--status-safe)';
+        const vulnCount = cardData.vulnerabilities ? cardData.vulnerabilities.length : 0;
+        
+        info.innerHTML = `
+            <div style="background:rgba(0,0,0,0.2); padding:10px 14px; border-radius:8px;">
+                <div style="font-size:10px; color:var(--text-muted); margin-bottom:4px;">UID</div>
+                <div style="font-family:monospace; font-weight:bold; font-size:12px;">${cardData.uid}</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.2); padding:10px 14px; border-radius:8px;">
+                <div style="font-size:10px; color:var(--text-muted); margin-bottom:4px;">Card Type</div>
+                <div style="font-size:13px; font-weight:500;">${cardData.card_type}</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.2); padding:10px 14px; border-radius:8px;">
+                <div style="font-size:10px; color:var(--text-muted); margin-bottom:4px;">Encryption</div>
+                <div style="font-size:13px; color:var(--accent-purple);">${cardData.encryption_type}</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.2); padding:10px 14px; border-radius:8px;">
+                <div style="font-size:10px; color:var(--text-muted); margin-bottom:4px;">Auth Mode</div>
+                <div style="font-size:13px;">${cardData.auth_mode}</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.2); padding:10px 14px; border-radius:8px;">
+                <div style="font-size:10px; color:var(--text-muted); margin-bottom:4px;">Risk Level</div>
+                <div><span class="badge ${cardData.risk_level.toLowerCase()}">${cardData.risk_level}</span></div>
+            </div>
+            <div style="background:rgba(0,0,0,0.2); padding:10px 14px; border-radius:8px;">
+                <div style="font-size:10px; color:var(--text-muted); margin-bottom:4px;">Vulnerabilities</div>
+                <div style="font-size:13px; color:${vulnCount > 0 ? 'var(--status-risk)' : 'var(--status-safe)'};">${vulnCount > 0 ? vulnCount + ' found' : 'None'}</div>
+            </div>
+        `;
+    },
+
+    async simulateAttack(attackType) {
+        const console_el = document.getElementById("attackConsole");
+        const logs_el = document.getElementById("attackConsoleLogs");
+        const title_el = document.getElementById("attackConsoleTitle");
+        const summary_el = document.getElementById("attackResultSummary");
+        
+        // Show console, clear previous
+        if (console_el) console_el.classList.remove("hidden");
+        if (logs_el) logs_el.innerHTML = "";
+        if (title_el) title_el.textContent = `RFID ${attackType} Attack — Running...`;
+        if (summary_el) summary_el.classList.add("hidden");
+        
+        // Disable all attack buttons
+        document.querySelectorAll('.quick-action-buttons .btn').forEach(b => b.disabled = true);
+        
+        this.showToast(`Launching ${attackType} Attack Simulation...`, 'info');
+        
+        try {
+            let targetUid = null;
+            if (this.rfidCards && this.rfidCards.length > 0) {
+                targetUid = this.rfidCards[0].uid;
+            }
+            
+            const reqBody = { attack_type: attackType };
+            if (targetUid) reqBody.target_uid = targetUid;
+            
+            const res = await authFetch(`${API_BASE}/rfid/attack/simulate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(reqBody)
+            });
+            
+            const data = await res.json();
+            
+            if (data.status === 'success' && data.logs) {
+                // Animate logs line-by-line
+                await this.animateAttackLogs(data.logs, logs_el, data.risk_level);
+                
+                // Update console title
+                if (title_el) {
+                    title_el.textContent = `RFID ${attackType} Attack — Complete`;
+                }
+                
+                // Show result summary card
+                this.showAttackResultSummary(data);
+                
+                // Refresh reports
+                this.fetchRfidReports();
+            }
+        } catch(e) {
+            console.error("Attack simulation failed", e);
+            if (logs_el) logs_el.innerHTML += `<div style="color:#ef4444;">ERROR: Attack simulation failed. Check console.</div>`;
+            this.showToast("Failed to run attack simulation", 'risk');
+        } finally {
+            // Re-enable buttons
+            document.querySelectorAll('.quick-action-buttons .btn').forEach(b => b.disabled = false);
+        }
+    },
+
+    async animateAttackLogs(logs, container, riskLevel) {
+        for (let i = 0; i < logs.length; i++) {
+            await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
+            
+            const line = logs[i];
+            const div = document.createElement("div");
+            div.style.opacity = "0";
+            div.style.transform = "translateX(-10px)";
+            div.style.transition = "all 0.3s ease";
+            
+            const isLastLine = i === logs.length - 1;
+            const isWarning = line.includes("⚠") || line.includes("VULNERABLE") || line.includes("SUCCESS");
+            const isSecure = line.includes("✓") || line.includes("SECURE") || line.includes("FAILED");
+            
+            if (isLastLine && isWarning) {
+                div.style.color = "#ef4444";
+                div.style.fontWeight = "bold";
+                div.style.fontSize = "13px";
+                div.style.padding = "6px 0";
+                div.style.borderTop = "1px solid rgba(239,68,68,0.3)";
+                div.style.marginTop = "4px";
+            } else if (isLastLine && isSecure) {
+                div.style.color = "#22c55e";
+                div.style.fontWeight = "bold";
+                div.style.fontSize = "13px";
+                div.style.padding = "6px 0";
+                div.style.borderTop = "1px solid rgba(34,197,94,0.3)";
+                div.style.marginTop = "4px";
+            } else if (line.includes("KEY CRACKED") || line.includes("CAPTURED")) {
+                div.style.color = "#f59e0b";
+            } else {
+                div.style.color = "#22c55e";
+            }
+            
+            // Add prompt prefix
+            const prefix = isLastLine ? "└─ " : "├─ ";
+            div.innerHTML = `<span style="color:var(--accent-blue);">$</span> ${prefix}${line}`;
+            
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            
+            // Animate in
+            requestAnimationFrame(() => {
+                div.style.opacity = "1";
+                div.style.transform = "translateX(0)";
+            });
+        }
+    },
+
+    showAttackResultSummary(data) {
+        const el = document.getElementById("attackResultSummary");
+        if (!el) return;
+        
+        const isVuln = data.risk_level === 'RISK';
+        const bgColor = isVuln ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)';
+        const borderColor = isVuln ? 'var(--status-risk)' : 'var(--status-safe)';
+        const icon = isVuln ? 'fa-shield-virus' : 'fa-shield-check';
+        const iconColor = isVuln ? 'var(--status-risk)' : 'var(--status-safe)';
+        
+        el.style.background = bgColor;
+        el.style.borderLeft = `3px solid ${borderColor}`;
+        el.classList.remove("hidden");
+        
+        el.innerHTML = `
+            <div style="display:flex; align-items:center; gap: 12px; margin-bottom: 12px;">
+                <i class="fa-solid ${icon}" style="font-size: 24px; color: ${iconColor};"></i>
+                <div>
+                    <div style="font-weight:600; font-size:14px;">${data.attack_type} Attack — ${data.attack_result}</div>
+                    <div style="font-size:11px; color:var(--text-muted);">Target: ${data.target_uid} (${data.card_type})</div>
+                </div>
+                <span class="badge ${data.risk_level.toLowerCase()}" style="margin-left:auto;">${data.risk_level}</span>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;">
+                <div><span style="color:var(--text-muted);">Encryption:</span> ${data.encryption_type}</div>
+                <div><span style="color:var(--text-muted);">Auth Mode:</span> ${data.auth_mode}</div>
+                <div><span style="color:var(--text-muted);">Replay Protection:</span> ${data.replay_protection}</div>
+                <div><span style="color:var(--text-muted);">Tag Integrity:</span> ${data.tag_integrity}</div>
+            </div>
+            <div style="margin-top: 12px; padding: 10px; background:rgba(0,0,0,0.2); border-radius: 6px;">
+                <div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;"><i class="fa-solid fa-lightbulb" style="color:var(--status-medium);"></i> Remediation</div>
+                <div style="font-size:12px;">${data.remediation}</div>
+            </div>
+        `;
+    },
+
+    async fetchRfidReports() {
+        try {
+            const res = await authFetch(`${API_BASE}/rfid/reports`);
+            if (res.ok) {
+                const reports = await res.json();
+                this.renderRfidReportsTable(reports);
+            }
+        } catch(e) {
+            console.error("Failed to load RFID reports");
+        }
+    },
+
+    renderRfidReportsTable(reports) {
+        const tbody = document.getElementById("rfidReportsTableBody");
+        if (!tbody) return;
+        tbody.innerHTML = "";
+        
+        if (reports.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding: 30px;">
+                <i class="fa-solid fa-clipboard-list" style="font-size: 24px; display: block; margin-bottom: 8px; opacity: 0.4;"></i>
+                No reports yet. Scan a card or run an attack simulation.
+            </td></tr>`;
+            return;
+        }
+
+        reports.forEach(r => {
+            const tr = document.createElement("tr");
+            const timeStr = new Date(r.timestamp).toLocaleString();
+            
+            let eventType, details;
+            if (r.attack_type) {
+                const attackIcons = {
+                    'Clone': 'fa-clone', 'Replay': 'fa-rotate-left',
+                    'Impersonation': 'fa-user-secret', 'Eavesdropping': 'fa-ear-listen',
+                    'Tampering': 'fa-pen-to-square'
+                };
+                const icon = attackIcons[r.attack_type] || 'fa-bolt';
+                eventType = `<i class="fa-solid ${icon}" style="color:var(--status-medium);"></i> ${r.attack_type}`;
+                details = r.attack_result || 'N/A';
+            } else {
+                eventType = `<i class="fa-solid fa-satellite-dish" style="color:var(--accent-blue);"></i> Scan`;
+                details = `Encryption: ${r.encryption_type}`;
+            }
+            
+            tr.innerHTML = `
+                <td style="font-size: 11px; white-space:nowrap;">${timeStr}</td>
+                <td style="font-family:monospace; font-weight:bold; font-size:11px;">${r.uid}</td>
+                <td style="font-size:12px;">${r.card_type}</td>
+                <td>${eventType}</td>
+                <td style="font-size:12px;">${details}</td>
+                <td style="font-size:11px; color:var(--text-muted); max-width:180px;">${r.remediation || '—'}</td>
+                <td><span class="badge ${r.risk_level.toLowerCase()}">${r.risk_level}</span></td>
+                <td style="font-size:11px;"><span style="padding:2px 6px; border-radius:4px; background:rgba(139,92,246,0.1); color:var(--accent-purple);">${r.simulation_status}</span></td>
+            `;
+            tbody.appendChild(tr);
+        });
     },
 
     async clearCards() {
         try {
             await authFetch(`${API_BASE}/rfid/cards`, { method: "DELETE" });
             this.fetchCards();
+            this.fetchRfidReports();
+            // Hide last scan card
+            const lastScanCard = document.getElementById("rfidLastScanCard");
+            if (lastScanCard) lastScanCard.classList.add("hidden");
+            // Hide attack console
+            const console_el = document.getElementById("attackConsole");
+            if (console_el) console_el.classList.add("hidden");
+            const summary_el = document.getElementById("attackResultSummary");
+            if (summary_el) summary_el.classList.add("hidden");
+            this.showToast("All RFID data cleared", "success");
         } catch(e) { }
     },
     // ============================

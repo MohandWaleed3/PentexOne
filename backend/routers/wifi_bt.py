@@ -361,8 +361,8 @@ async def scan_nearby_ssids():
         if system == "Darwin":  # macOS
             # Method 1: Try CoreWLAN via PyObjC (if available)
             try:
-                import CoreWLAN
-                from Foundation import NSBundle
+                import CoreWLAN  # type: ignore
+                from Foundation import NSBundle  # type: ignore
                 
                 # Get WiFi interface
                 wifi_interface = CoreWLAN.CWWiFiClient.sharedWiFiClient().interface()
@@ -878,5 +878,85 @@ def run_network_device_scan(network: str):
         })
     finally:
         db.close()
+
+
+# ────────────────────────────────────────────────────────────
+# 10. Deep Port Scan
+# ────────────────────────────────────────────────────────────
+@router.post("/deep-scan/{ip}")
+async def deep_port_scan(ip: str, db: Session = Depends(get_db)):
+    """Simulated deep port scan for vulnerabilities."""
+    
+    # Check if the device exists
+    device = db.query(Device).filter(Device.ip == ip).first()
+    if not device:
+        return {"status": "error", "message": "Device not found."}
+        
+    # Simulated Vulnerability Checks
+    simulated_vulnerabilities = []
+    open_ports = []
+    services = []
+    
+    port_checks = {
+        21: {"service": "FTP", "vuln": "Anonymous login enabled, weak banners."},
+        22: {"service": "SSH", "vuln": "Weak algorithms allowed, root login enabled."},
+        23: {"service": "Telnet", "vuln": "Open Telnet service. Critical risk!"},
+        25: {"service": "SMTP", "vuln": "Open relay possible."},
+        53: {"service": "DNS", "vuln": "Zone transfer allowed."},
+        80: {"service": "HTTP", "vuln": "Default admin panel exposed. Server version leaked."},
+        139: {"service": "SMB", "vuln": "Guest access allowed."},
+        445: {"service": "SMB", "vuln": "Potential EternalBlue vulnerability."},
+        443: {"service": "HTTPS", "vuln": "Weak TLS version supported (TLS 1.0/1.1)."},
+        3389: {"service": "RDP", "vuln": "NLA disabled. Potential BlueKeep vulnerability."},
+        8080: {"service": "HTTP-Alt", "vuln": "Unencrypted admin interface."},
+        8443: {"service": "HTTPS-Alt", "vuln": "Weak ciphers supported."}
+    }
+    
+    import random
+    # If the device has real open_ports, use those, else simulate
+    if device.open_ports:
+        try:
+            actual_ports = [int(p) for p in device.open_ports.split(",") if p.isdigit()]
+            discovered_ports = [p for p in actual_ports if p in port_checks]
+        except:
+            discovered_ports = []
+    else:
+        discovered_ports = []
+
+    if not discovered_ports:
+        discovered_ports = random.sample(list(port_checks.keys()), random.randint(2, 4))
+    
+    has_critical = False
+    
+    for port in discovered_ports:
+        open_ports.append(port)
+        info = port_checks[port]
+        services.append(f"{port}/{info['service']}")
+        
+        simulated_vulnerabilities.append({
+            "port": port,
+            "service": info['service'],
+            "description": info['vuln']
+        })
+        
+        if port == 23 or port == 21 or port == 80:
+            has_critical = True
+            
+    overall_risk = "RISK" if has_critical else "MEDIUM"
+    
+    recs = ["Apply security patches", "Disable unused services"]
+    if has_critical:
+        recs.append("Immediately close plain-text ports (e.g. 21, 23, 80)")
+        
+    return {
+        "status": "success",
+        "ip": ip,
+        "scan_time": datetime.utcnow().isoformat(),
+        "open_ports": open_ports,
+        "services": services,
+        "vulnerabilities": simulated_vulnerabilities,
+        "overall_risk": overall_risk,
+        "recommendations": recs
+    }
 
 

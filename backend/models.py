@@ -58,9 +58,33 @@ class RFIDCardOut(BaseModel):
     card_type: str
     sak: str
     data: str
+    encryption_type: str
+    auth_mode: str
+    replay_protection: str
+    tag_integrity: str
+    vulnerabilities_json: str
     risk_level: str
     risk_score: float
     last_seen: datetime
+
+    class Config:
+        from_attributes = True
+
+class RFIDScanReportOut(BaseModel):
+    id: int
+    uid: str
+    card_type: str
+    encryption_type: str
+    auth_mode: str
+    replay_protection: str
+    tag_integrity: str
+    risk_level: str
+    vulnerabilities: str
+    attack_type: Optional[str] = None
+    attack_result: Optional[str] = None
+    remediation: Optional[str] = None
+    simulation_status: str
+    timestamp: datetime
 
     class Config:
         from_attributes = True

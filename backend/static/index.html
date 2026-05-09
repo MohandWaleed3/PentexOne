@@ -302,10 +302,19 @@
                             </div>
 
                             <div class="action-buttons">
-                                <button class="btn btn-outline-blue w-half" onclick="app.testPorts()">Deep Port
+                                <button class="btn btn-outline-blue w-half" onclick="app.deepScanDevice()">Deep Port
                                     Scan</button>
                                 <button class="btn btn-outline-red w-half" onclick="app.testCreds()">Test Default
                                     Creds</button>
+                            </div>
+                            
+                            <!-- Deep Scan Results -->
+                            <div id="deepScanResults" class="hidden" style="margin-top: 15px;">
+                                <h4 style="font-size: 13px; margin-bottom: 10px;"><i class="fa-solid fa-shield-halved"></i> Deep Scan Results</h4>
+                                <div id="deepScanProgress" class="hidden" style="text-align: center; color: var(--accent-blue); margin-bottom: 10px;">
+                                    <i class="fa-solid fa-circle-notch fa-spin"></i> Scanning ports & assessing vulnerabilities...
+                                </div>
+                                <div id="deepScanContent"></div>
                             </div>
                             
                             <div class="action-buttons" style="margin-top: 8px;">
@@ -332,26 +341,117 @@
 
             <!-- ================= VIEW: RFID ================= -->
             <div id="view-rfid" class="view-section hidden">
+                <!-- Scan Controls -->
                 <div class="glass-panel" style="margin-bottom: 20px;">
-                    <button class="btn btn-primary" onclick="app.scanRfid()"><i class="fa-solid fa-wifi"></i> Start RFID
-                        Scan</button>
-                    <button class="btn btn-outline-red" onclick="app.clearCards()"><i class="fa-solid fa-trash"></i>
-                        Clear Cards</button>
-                    <span id="rfidStatus" style="margin-left: 20px; color: var(--text-muted);">Ready to scan.</span>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <button class="btn btn-primary" onclick="app.scanRfid()" id="rfidScanBtn">
+                            <i class="fa-solid fa-satellite-dish"></i> Scan RFID Card
+                        </button>
+                        <button class="btn btn-outline-red" onclick="app.clearCards()">
+                            <i class="fa-solid fa-trash"></i> Clear All Data
+                        </button>
+                        <span id="rfidStatus" style="margin-left: auto; color: var(--text-muted); font-size: 13px;">
+                            <i class="fa-solid fa-circle" style="color: var(--status-safe); font-size: 8px;"></i> Ready to scan
+                        </span>
+                    </div>
                 </div>
 
-                <div class="glass-panel">
-                    <h2>Scanned Cards</h2>
+                <!-- Last Scan Info Card -->
+                <div id="rfidLastScanCard" class="glass-panel hidden" style="margin-bottom: 20px; border-left: 3px solid var(--accent-blue);">
+                    <h4 style="font-size: 13px; margin-bottom: 12px;">
+                        <i class="fa-solid fa-id-card" style="color: var(--accent-blue);"></i> Last Scanned Card
+                    </h4>
+                    <div id="rfidLastScanInfo" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;"></div>
+                </div>
+
+                <!-- Attack Simulator -->
+                <div class="glass-panel" style="margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 12px;">
+                        <i class="fa-solid fa-skull-crossbones" style="color: var(--status-risk);"></i> Attack Simulator
+                    </h3>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 15px;">
+                        Simulate common RFID/NFC security attacks against the last scanned card. All attacks are passive simulations.
+                    </p>
+                    <div class="quick-action-buttons" style="margin-bottom: 15px;">
+                        <button class="btn btn-outline-orange" onclick="app.simulateAttack('Clone')">
+                            <i class="fa-solid fa-clone"></i> Clone
+                        </button>
+                        <button class="btn btn-outline-purple" onclick="app.simulateAttack('Replay')">
+                            <i class="fa-solid fa-rotate-left"></i> Replay
+                        </button>
+                        <button class="btn btn-outline-pink" onclick="app.simulateAttack('Impersonation')">
+                            <i class="fa-solid fa-user-secret"></i> Impersonation
+                        </button>
+                        <button class="btn btn-outline-blue" onclick="app.simulateAttack('Eavesdropping')">
+                            <i class="fa-solid fa-ear-listen"></i> Eavesdropping
+                        </button>
+                        <button class="btn btn-outline-red" onclick="app.simulateAttack('Tampering')">
+                            <i class="fa-solid fa-pen-to-square"></i> Tampering
+                        </button>
+                    </div>
+
+                    <!-- Attack Console (terminal) -->
+                    <div id="attackConsole" class="hidden" style="background: #0a0e17; border: 1px solid rgba(59,130,246,0.3); border-radius: 10px; overflow: hidden;">
+                        <div style="background: rgba(59,130,246,0.1); padding: 8px 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid rgba(59,130,246,0.2);">
+                            <span style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444;"></span>
+                            <span style="width: 10px; height: 10px; border-radius: 50%; background: #f59e0b;"></span>
+                            <span style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e;"></span>
+                            <span style="margin-left: auto; font-size: 11px; color: var(--text-muted); font-family: monospace;" id="attackConsoleTitle">RFID Attack Console</span>
+                        </div>
+                        <div id="attackConsoleLogs" style="padding: 14px; font-family: 'Courier New', monospace; font-size: 12px; color: #22c55e; max-height: 280px; overflow-y: auto; line-height: 1.7;"></div>
+                    </div>
+
+                    <!-- Attack Result Summary -->
+                    <div id="attackResultSummary" class="hidden" style="margin-top: 15px; padding: 16px; border-radius: 10px;"></div>
+                </div>
+
+                <!-- Scanned Cards Table -->
+                <div class="glass-panel" style="margin-bottom: 20px;">
+                    <div class="panel-header">
+                        <h2><i class="fa-solid fa-id-card"></i> Scanned Cards</h2>
+                        <button class="btn btn-icon" onclick="app.fetchCards()"><i class="fa-solid fa-rotate-right"></i></button>
+                    </div>
                     <div class="table-responsive">
                         <table id="cardsTable">
                             <thead>
                                 <tr>
                                     <th>UID</th>
                                     <th>Card Type</th>
-                                    <th>Risk Level</th>
+                                    <th>Encryption</th>
+                                    <th>Auth Mode</th>
+                                    <th>Replay Prot.</th>
+                                    <th>Integrity</th>
+                                    <th>Risk</th>
+                                    <th>Vulnerabilities</th>
                                 </tr>
                             </thead>
                             <tbody id="cardsTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- RFID Scan & Attack Reports -->
+                <div class="glass-panel">
+                    <div class="panel-header">
+                        <h2><i class="fa-solid fa-clipboard-list"></i> Scan & Attack Reports</h2>
+                        <button class="btn btn-icon" onclick="app.fetchRfidReports()"><i class="fa-solid fa-rotate-right"></i></button>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="rfidReportsTable">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>UID</th>
+                                    <th>Card Type</th>
+                                    <th>Event</th>
+                                    <th>Result / Details</th>
+                                    <th>Remediation</th>
+                                    <th>Risk</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rfidReportsTableBody">
                             </tbody>
                         </table>
                     </div>
