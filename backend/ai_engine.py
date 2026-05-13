@@ -264,6 +264,41 @@ class AISecurityEngine:
         # Calculate overall AI confidence
         confidence = self._calculate_confidence(device, device_type)
         
+        # Generate dynamic summary based ONLY on current scan output
+        ports_list = [p.strip() for p in str(device.get("open_ports", "")).split(",") if p.strip()]
+        num_ports = len(ports_list)
+        vulns = device.get("vulnerabilities", [])
+        num_vulns = len(vulns)
+        risk_lvl = device.get('risk_level', 'UNKNOWN').upper()
+        
+        # Phrases for dynamic synthesis
+        risk_phrases = {
+            "CRITICAL": ["represents a critical threat to network integrity", "exhibits severe security compromises", "is highly vulnerable to immediate exploitation"],
+            "HIGH": ["shows significant security gaps", "possesses multiple high-risk entry points", "requires urgent security hardening"],
+            "MEDIUM": ["presents a moderate risk profile", "has several security misconfigurations", "requires configuration review"],
+            "LOW": ["is relatively secure but has minor issues", "shows minimal exposure", "is well-hardened with few findings"],
+            "SAFE": ["appears securely configured", "meets current security baseline standards", "shows no immediate vulnerabilities"]
+        }
+        
+        selected_risk_phrase = risk_phrases.get(risk_lvl, ["has an undefined risk profile"])[num_ports % len(risk_phrases.get(risk_lvl, ["..."]))]
+        
+        summary = f"Pentex AI Analysis: {device.get('hostname', 'Host ' + device.get('ip', 'N/A'))} {selected_risk_phrase}. "
+        
+        if num_ports > 0:
+            summary += f"The scanner identified {num_ports} active services. "
+            if any(p in ['21', '23', '445', '3389'] for p in ports_list):
+                summary += f"Critical protocol exposure detected on ports {', '.join([p for p in ports_list if p in ['21', '23', '445', '3389']][:2])}. "
+        
+        if num_vulns > 0:
+            high_vulns = [v for v in vulns if v.get("severity", "").upper() in ["CRITICAL", "HIGH"]]
+            summary += f"A total of {num_vulns} rule-based vulnerabilities were mapped. "
+            if high_vulns:
+                summary += f"Priority remediation is required for {high_vulns[0].get('vuln_type', 'unspecified')} due to its {high_vulns[0].get('severity')} impact. "
+        else:
+            summary += "No specific vulnerability patterns were matched against the current service banners. "
+            
+        summary += f"Overall AI confidence in this assessment is {int(confidence * 100)}% based on {device_type.replace('_', ' ')} heuristics."
+
         return {
             "device_type": device_type,
             "predicted_vulnerabilities": predicted_vulns,
@@ -271,6 +306,7 @@ class AISecurityEngine:
             "is_anomaly": anomaly_score > AI_CONFIG["anomaly_threshold"],
             "recommendations": recommendations,
             "confidence": confidence,
+            "dynamic_summary": summary,
             "analysis_timestamp": datetime.utcnow().isoformat()
         }
     

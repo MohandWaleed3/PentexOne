@@ -81,7 +81,7 @@ def get_settings(db: Session = Depends(get_db)):
     return {s.key: s.value for s in settings}
 
 @app.put("/settings")
-def update_settings(updates: SettingUpdate, db: Session = Depends(get_db)):
+async def update_settings(updates: SettingUpdate, db: Session = Depends(get_db)):
     if updates.simulation_mode is not None:
         setting = db.query(Setting).filter(Setting.key == "simulation_mode").first()
         if setting: setting.value = updates.simulation_mode
@@ -89,6 +89,16 @@ def update_settings(updates: SettingUpdate, db: Session = Depends(get_db)):
         setting = db.query(Setting).filter(Setting.key == "nmap_timeout").first()
         if setting: setting.value = updates.nmap_timeout
     db.commit()
+    
+    # Broadcast change for instant sync
+    await manager.broadcast({
+        "event": "settings_updated",
+        "settings": {
+            "simulation_mode": updates.simulation_mode,
+            "nmap_timeout": updates.nmap_timeout
+        }
+    })
+    
     return {"status": "success"}
 
 # التأكد من وجود مجلد static قبل توجيهه (لتجنب الأخطاء إذا لم يُنشأ بعد)
