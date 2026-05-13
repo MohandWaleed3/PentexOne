@@ -780,15 +780,23 @@ const app = {
         
         try {
             const res = await authFetch(`${API_BASE}/wireless/deep-scan/${ip}`, { method: "POST" });
-            const data = await res.json();
+            let data;
+            try {
+                data = await res.json();
+            } catch (err) {
+                console.error("Failed to parse JSON response:", err);
+                data = { status: 'error', message: 'Invalid server response' };
+            }
             
             if (data.status === 'success') {
                 this.renderDeepScanResults(data);
                 setTimeout(() => this.fetchDevices(), 2000);
             } else {
-                if (progress) progress.innerHTML = `<span style="color:var(--status-risk)">Error: ${data.message}</span>`;
+                const errorMsg = data.message || "Failed to perform deep scan";
+                if (progress) progress.innerHTML = `<span style="color:var(--status-risk)">Error: ${errorMsg}</span>`;
             }
         } catch (e) {
+            console.error("Deep scan failed:", e);
             if (progress) progress.innerHTML = `<span style="color:var(--status-risk)">Error starting deep scan</span>`;
         }
     },
@@ -930,12 +938,19 @@ const app = {
         
         try {
             const res = await authFetch(`${API_BASE}/rfid/scan`, { method: "POST" });
-            const data = await res.json();
+            let data;
+            try {
+                data = await res.json();
+            } catch (err) {
+                data = { status: 'error', message: 'Invalid server response' };
+            }
             
             if (data.status === 'error') {
-                status.innerHTML = `<i class="fa-solid fa-circle" style="color: var(--status-risk); font-size: 8px;"></i> ${data.message}`;
+                const errorMsg = data.message || "Scan failed";
+                status.innerHTML = `<i class="fa-solid fa-circle" style="color: var(--status-risk); font-size: 8px;"></i> ${errorMsg}`;
             } else {
-                status.innerHTML = `<i class="fa-solid fa-circle" style="color: var(--status-safe); font-size: 8px;"></i> ${data.message}`;
+                const successMsg = data.message || "Scan successful";
+                status.innerHTML = `<i class="fa-solid fa-circle" style="color: var(--status-safe); font-size: 8px;"></i> ${successMsg}`;
                 
                 // Show last scan info card
                 if (data.data) {
@@ -946,6 +961,7 @@ const app = {
             this.fetchCards();
             this.fetchRfidReports();
         } catch(e) {
+            console.error("RFID scan failed:", e);
             status.innerHTML = '<i class="fa-solid fa-circle" style="color: var(--status-risk); font-size: 8px;"></i> Error scanning card.';
         } finally {
             if (scanBtn) {

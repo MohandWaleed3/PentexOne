@@ -255,15 +255,16 @@ def _build_attack_logs(attack_type: str, uid: str, card_type: str,
 
 @router.post("/scan")
 async def scan_rfid(db: Session = Depends(get_db)):
-    """Scan for an RFID card (simulated or real)."""
+    """Scan for an RFID card (simulated or real). Always falls back to simulation if no hardware."""
     sim_setting = db.query(Setting).filter(Setting.key == "simulation_mode").first()
     is_sim = sim_setting and sim_setting.value.lower() == "true"
 
+    card_data = None
     if not is_sim:
         card_data = _real_rfid_read()
-        if not card_data:
-            return {"status": "error", "message": "No real RFID hardware found. Please enable Simulation Mode in Settings."}
-    else:
+        
+    if not card_data:
+        # Fallback to simulation regardless of setting
         card_data = _generate_mock_rfid_card()
 
     vulns_json = json.dumps(card_data["vulnerabilities"])
@@ -314,7 +315,64 @@ async def scan_rfid(db: Session = Depends(get_db)):
 
     return {
         "status": "success",
-        "message": f"Card scanned: {card_data['uid']}",
+        "message": f"Card scanned: {card_data['uid']} ({card_data['simulation_status']})",
+        "data": card_data,
+    }
+
+
+@router.post("/scan/mock")
+async def scan_rfid_mock(db: Session = Depends(get_db)):
+    """Explicitly scan for a mock RFID card."""
+    card_data = _generate_mock_rfid_card()
+    vulns_json = json.dumps(card_data["vulnerabilities"])
+
+    # Upsert RFIDCard
+    existing = db.query(RFIDCard).filter(RFIDCard.uid == card_data["uid"]).first()
+    if existing:
+        card = existing
+        card.last_seen = datetime.utcnow()
+        card.card_type = card_data["card_type"]
+        card.sak = card_data["sak"]
+        card.encryption_type = card_data["encryption_type"]
+        card.auth_mode = card_data["auth_mode"]
+        card.replay_protection = card_data["replay_protection"]
+        card.tag_integrity = card_data["tag_integrity"]
+        card.vulnerabilities_json = vulns_json
+        card.risk_level = card_data["risk_level"]
+        card.risk_score = card_data["risk_score"]
+    else:
+        card = RFIDCard(
+            uid=card_data["uid"],
+            card_type=card_data["card_type"],
+            sak=card_data["sak"],
+            encryption_type=card_data["encryption_type"],
+            auth_mode=card_data["auth_mode"],
+            replay_protection=card_data["replay_protection"],
+            tag_integrity=card_data["tag_integrity"],
+            vulnerabilities_json=vulns_json,
+            risk_level=card_data["risk_level"],
+            risk_score=card_data["risk_score"],
+        )
+        db.add(card)
+
+    # Persist to RFIDScanReport
+    report = RFIDScanReport(
+        uid=card_data["uid"],
+        card_type=card_data["card_type"],
+        encryption_type=card_data["encryption_type"],
+        auth_mode=card_data["auth_mode"],
+        replay_protection=card_data["replay_protection"],
+        tag_integrity=card_data["tag_integrity"],
+        risk_level=card_data["risk_level"],
+        vulnerabilities=vulns_json,
+        simulation_status=card_data["simulation_status"],
+    )
+    db.add(report)
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Card scanned: {card_data['uid']} (Simulated)",
         "data": card_data,
     }
 
