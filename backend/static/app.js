@@ -2,7 +2,7 @@ const API_BASE = window.location.origin;
 
 // Auth removed
 function authHeaders(extra = {}) {
-    return {'Content-Type': 'application/json', ...extra};
+    return { 'Content-Type': 'application/json', ...extra };
 }
 
 function authFetch(url, options = {}) {
@@ -40,7 +40,7 @@ const app = {
         this.fetchAISuggestions(); // AI suggestions on load
         this.fetchAISecurityScore(); // AI security score
         this.fetchSettings(); // Load system settings
-        
+
         // Add auto-refresh every 5 seconds as backup
         this.startAutoRefresh();
         console.log('[Init] App initialized with auto-refresh enabled');
@@ -56,10 +56,10 @@ const app = {
         } catch (e) {
             console.warn("Settings endpoint not available, defaulting simulationMode to false", e);
         }
-        
+
         const toggle = document.getElementById('globalSimulationToggle');
         if (toggle) toggle.checked = this.simulationMode;
-        
+
         this.updateSimulationUI();
     },
 
@@ -94,7 +94,7 @@ const app = {
                 btn.title = 'Enable Simulation Mode first';
             }
         });
-        
+
         // If simulation is off, show a locked overlay or message in terminal
         const term = document.getElementById('attackConsoleLogs');
         if (term && !this.simulationMode) {
@@ -103,30 +103,31 @@ const app = {
             term.innerHTML = '<div class="terminal-line">Pentex One Attack Simulator v2.0</div><div class="terminal-line">Ready for session...</div>';
         }
     },
-    
-    startAutoRefresh() {
-        // Refresh devices and summary every 2 seconds for faster display
-        const isLightweight = document.body.classList.contains('lightweight-mode');
-        const interval = isLightweight ? 5000 : 2000;
-        
-        this.refreshInterval = setInterval(() => {
-            // Only refresh if no scan is currently running
-            this.fetchDevices();
-            this.fetchSummary();
-        }, interval);
-        
-        // Refresh hardware status every 2 seconds to quickly detect plugged dongles
-        this.hwRefreshInterval = setInterval(() => {
-            this.fetchHardwareStatus();
-        }, 2000);
-        
-        console.log(`[AutoRefresh] Started - will refresh every ${interval/1000} seconds`);
-    },
-    
+
+     startAutoRefresh() {
+         // Refresh devices and summary every 2 seconds for faster display
+         const isLightweight = document.body.classList.contains('lightweight-mode');
+         const interval = isLightweight ? 5000 : 2000;
+
+         this.refreshInterval = setInterval(() => {
+             // Only refresh if no scan is currently running
+             this.fetchDevices();
+             this.fetchSummary();
+             this.fetchCards(); // Also refresh RFID cards
+         }, interval);
+
+         // Refresh hardware status every 2 seconds to quickly detect plugged dongles
+         this.hwRefreshInterval = setInterval(() => {
+             this.fetchHardwareStatus();
+         }, 2000);
+
+         console.log(`[AutoRefresh] Started - will refresh every ${interval / 1000} seconds`);
+     },
+
     toggleAdvanced() {
         const advancedOptions = document.getElementById('advancedOptions');
         const advancedIcon = document.getElementById('advancedIcon');
-        
+
         if (advancedOptions.classList.contains('hidden')) {
             advancedOptions.classList.remove('hidden');
             advancedIcon.style.transform = 'rotate(180deg)';
@@ -139,7 +140,7 @@ const app = {
     toggleProtocols() {
         const protocolButtons = document.getElementById('protocolButtons');
         const protocolIcon = document.getElementById('protocolIcon');
-        
+
         if (protocolButtons.classList.contains('hidden')) {
             protocolButtons.classList.remove('hidden');
             protocolIcon.style.transform = 'rotate(180deg)';
@@ -153,13 +154,13 @@ const app = {
         // Quick auto-scan: discover network then scan
         try {
             this.showToast('Discovering network...', 'info');
-            
+
             const response = await authFetch(`${API_BASE}/wireless/discover/devices`, {
                 method: 'POST'
             });
-            
+
             const data = await response.json();
-            
+
             if (data.status === 'started') {
                 this.showToast(`Scanning ${data.network}...`, 'success');
                 document.getElementById('networkInput').value = data.network;
@@ -254,7 +255,7 @@ const app = {
                 const div = document.createElement('div');
                 div.className = 'terminal-line';
                 let charIndex = 0;
-                
+
                 // Pre-process text to replace markers with HTML
                 const processedText = text
                     .replace(/\n/g, '<br>')
@@ -402,49 +403,54 @@ const app = {
                 this.updateScanProgress(data.progress, data.message);
             }
         } else if (data.event === 'scan_complete' && data.type === 'deep_port_scan') {
-            // Advanced Deep Port Scan Complete
-            const riskLevel = data.risk_level || 'UNKNOWN';
-            this.showToast(`Deep Scan Complete for ${data.ip}`, 'success');
-            
-            // Update Dashboard UI
-            const ipEl = document.getElementById('deepScanIp');
-            const vendorEl = document.getElementById('deepScanVendor');
-            if (ipEl) ipEl.textContent = data.ip;
-            if (vendorEl) vendorEl.textContent = data.vendor || 'Unknown Vendor';
-            
-            const statusBadge = document.getElementById('deepScanStatusBadge');
-            if (statusBadge) {
-                statusBadge.textContent = riskLevel;
-                statusBadge.className = `badge status-${riskLevel.toLowerCase()}`;
-                statusBadge.style.fontSize = '9px';
-                statusBadge.style.padding = '2px 8px';
-                statusBadge.style.letterSpacing = '1px';
-            }
-            
-            // Hide progress
-            const progress = document.getElementById('deepScanProgress');
-            if (progress) progress.classList.add('hidden');
-            
-            // Render Detailed Port Scan Results
-            this.renderDeepScanCards(data.vulnerabilities, data.service_banners, data.open_ports);
-            
-            // Dynamic AI Summary
-            const summaryDiv = document.getElementById('aiDynamicSummary');
-            if (summaryDiv && data.ai_summary) {
-                summaryDiv.innerHTML = `<i class="fa-solid fa-quote-left" style="opacity:0.3; margin-right:8px;"></i>${data.ai_summary}`;
-                const container = document.getElementById('aiDeviceAnalysis');
-                if (container) container.classList.remove('hidden');
-            }
-            
-            this.fetchDevices();
-            this.fetchSummary();
+            try {
+                // SINGLE SOURCE OF TRUTH: All deep scan data is processed here
+                console.log('[DeepScan] Received final aggregated results for:', data.ip);
+                const riskLevel = data.risk_level || 'UNKNOWN';
+                this.showToast(`Deep Scan Complete for ${data.ip}`, 'success');
 
-        } else if (data.event === 'scan_finished') {
-            console.log('[Scan Finished] Count:', data.count);
+                // Update Header
+                const ipEl = document.getElementById('deepScanIp');
+                const vendorEl = document.getElementById('deepScanVendor');
+                if (ipEl) ipEl.textContent = data.ip || '---';
+                if (vendorEl) vendorEl.textContent = data.vendor || 'Unknown Vendor';
+
+                const statusBadge = document.getElementById('deepScanStatusBadge');
+                if (statusBadge) {
+                    statusBadge.textContent = riskLevel.toUpperCase();
+                    statusBadge.className = `badge status-${riskLevel.toLowerCase()}`;
+                }
+
+                // Render technical data
+                const vulns = data.vulnerabilities || [];
+                const banners = data.service_banners || {};
+                const ports = Array.isArray(data.open_ports) ? data.open_ports : [];
+
+                console.log(`[DeepScan] Rendering ${ports.length} ports and ${vulns.length} vulnerabilities`);
+                this.renderDeepScanCards(vulns, banners, ports);
+
+                // Render AI analysis
+                if (data.ai_results || data.ai_summary) {
+                    this.renderAIAnalysis(data.ai_results || { dynamic_summary: data.ai_summary });
+                }
+
+                this.fetchDevices();
+                this.fetchSummary();
+            } catch (e) {
+                console.error('[DeepScan] Render error:', e);
+            } finally {
+                const progress = document.getElementById('deepScanProgress');
+                if (progress) progress.classList.add('hidden');
+            }
+
+        } else if (data.event === 'scan_finished' && data.type !== 'deep_port_scan') {
+            // Ignore generic finished events during deep scans to prevent overwrites
+            console.log('[Scan Finished] Type:', data.type, 'Count:', data.count);
             this.showToast(`Scan complete: Found ${data.count} devices.`, 'success');
             this.updateScanProgress(100, `Scan finished.`);
             setTimeout(() => {
-                document.getElementById("scanProgressContainer").classList.add("hidden");
+                const container = document.getElementById("scanProgressContainer");
+                if (container) container.classList.add("hidden");
                 this.fetchDevices();
                 this.fetchSummary();
                 this.fetchAISuggestions();
@@ -456,6 +462,19 @@ const app = {
                 const progress = document.getElementById('deepScanProgress');
                 if (progress) progress.classList.add('hidden');
                 this.updateDeepScanProgress(0, `Error: ${data.message}`);
+
+                const statusBadge = document.getElementById('deepScanStatusBadge');
+                if (statusBadge) {
+                    statusBadge.textContent = 'FAILED';
+                    statusBadge.className = 'badge status-risk';
+                }
+
+                const contentDiv = document.getElementById('deepScanContent');
+                if (contentDiv) {
+                    contentDiv.innerHTML = `<div style="text-align:center; padding: 40px; color: #ef4444;">
+                        <i class="fa-solid fa-circle-exclamation" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>
+                        Scan failed: ${data.message}</div>`;
+                }
             } else {
                 const progress = document.getElementById('scanProgressContainer');
                 if (progress) progress.classList.add('hidden');
@@ -483,7 +502,7 @@ const app = {
         if (!container) return;
         const toast = document.createElement('div');
         toast.className = `toast-msg ${type}`;
-        
+
         const icons = {
             'info': 'fa-circle-info',
             'success': 'fa-circle-check',
@@ -513,19 +532,19 @@ const app = {
         `;
 
         container.appendChild(toast);
-        
+
         setTimeout(() => {
             toast.style.opacity = '0';
             toast.style.transform = 'translateX(20px)';
             toast.style.transition = 'all 0.5s ease';
             setTimeout(() => toast.remove(), 500);
         }, 5000);
-        
+
         if (type === 'risk') {
             try {
                 const audio = new Audio('https://www.soundjay.com/buttons/beep-01a.mp3');
                 audio.play();
-            } catch(e){}
+            } catch (e) { }
         }
     },
 
@@ -534,7 +553,7 @@ const app = {
         document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
         // Show target view
         document.getElementById('view-' + viewId).classList.remove('hidden');
-        
+
         // Update nav active state
         document.querySelectorAll('.nav-links li').forEach(el => el.classList.remove('active'));
         document.getElementById('nav-' + viewId).classList.add('active');
@@ -546,7 +565,7 @@ const app = {
             'rfid': ['Access Control', 'Scan and manage RFID/NFC cards and key fobs'],
             'reports': ['Security Reports', 'Generate and export security audit results']
         };
-        
+
         if (titles[viewId]) {
             document.getElementById('pageTitle').textContent = titles[viewId][0];
             document.getElementById('pageSubtitle').textContent = titles[viewId][1];
@@ -561,7 +580,7 @@ const app = {
                 const data = await res.json();
                 const oldRiskEl = document.getElementById("sRisk");
                 const oldRisk = oldRiskEl ? parseInt(oldRiskEl.textContent) || 0 : 0;
-                
+
                 if (document.getElementById("sTotal")) document.getElementById("sTotal").textContent = data.total_devices;
                 if (document.getElementById("sSafe")) document.getElementById("sSafe").textContent = data.safe_count;
                 if (document.getElementById("sMedium")) document.getElementById("sMedium").textContent = data.medium_count;
@@ -583,40 +602,43 @@ const app = {
         }
     },
 
-    updateProtocolChart() {
-        if (!this.protocolChart) return;
-        
-        const protocolCounts = {
-            'Wi-Fi': 0,
-            'Bluetooth': 0,
-            'Zigbee': 0,
-            'Thread': 0,
-            'Matter': 0,
-            'Z-Wave': 0,
-            'LoRaWAN': 0,
-            'RFID': 0
-        };
-        
-        this.devices.forEach(device => {
-            if (protocolCounts.hasOwnProperty(device.protocol)) {
-                protocolCounts[device.protocol]++;
-            }
-        });
-        
-        // Merge Matter into Thread for display
-        const displayData = [
-            protocolCounts['Wi-Fi'],
-            protocolCounts['Bluetooth'],
-            protocolCounts['Zigbee'],
-            protocolCounts['Thread'] + protocolCounts['Matter'],
-            protocolCounts['Z-Wave'],
-            protocolCounts['LoRaWAN'],
-            protocolCounts['RFID']
-        ];
-        
-        this.protocolChart.data.datasets[0].data = displayData;
-        this.protocolChart.update();
-    },
+     updateProtocolChart() {
+         if (!this.protocolChart) return;
+
+         const protocolCounts = {
+             'Wi-Fi': 0,
+             'Bluetooth': 0,
+             'Zigbee': 0,
+             'Thread': 0,
+             'Matter': 0,
+             'Z-Wave': 0,
+             'LoRaWAN': 0,
+             'RFID': 0
+         };
+
+         this.devices.forEach(device => {
+             if (protocolCounts.hasOwnProperty(device.protocol)) {
+                 protocolCounts[device.protocol]++;
+             }
+         });
+
+         // Add RFID card count to RFID protocol
+         protocolCounts['RFID'] += this.rfidCards?.length || 0;
+
+         // Merge Matter into Thread for display
+         const displayData = [
+             protocolCounts['Wi-Fi'],
+             protocolCounts['Bluetooth'],
+             protocolCounts['Zigbee'],
+             protocolCounts['Thread'] + protocolCounts['Matter'],
+             protocolCounts['Z-Wave'],
+             protocolCounts['LoRaWAN'],
+             protocolCounts['RFID']
+         ];
+
+         this.protocolChart.data.datasets[0].data = displayData;
+         this.protocolChart.update();
+     },
 
     async fetchDevices() {
         try {
@@ -625,14 +647,14 @@ const app = {
                 const newDevices = await res.json();
                 const deviceCount = newDevices.length;
                 const oldCount = this.devices.length;
-                
+
                 // Only update if device count changed or first load
                 if (deviceCount !== oldCount || oldCount === 0) {
                     console.log(`[Fetch] Devices changed: ${oldCount} → ${deviceCount}, updating UI`);
                     this.devices = newDevices;
                     this.renderDevicesTable();
                     this.updateProtocolChart();
-                    
+
                     // Show toast if new devices found
                     if (deviceCount > oldCount) {
                         this.showToast(`Found ${deviceCount - oldCount} new device(s)!`, 'success');
@@ -653,11 +675,11 @@ const app = {
 
     renderDevicesTable() {
         const tbody = document.getElementById("devicesTableBody");
-        if(!tbody) {
+        if (!tbody) {
             console.error('[Render] devicesTableBody not found in HTML!');
             return;
         }
-        
+
         console.log(`[Render] Rendering ${this.devices.length} devices to table`);
         tbody.innerHTML = "";
 
@@ -675,7 +697,7 @@ const app = {
             if (this.selectedDevice && this.selectedDevice.id === device.id) {
                 tr.classList.add("active");
             }
-            
+
             tr.onclick = () => this.selectDevice(device.id);
 
             let icon = 'fa-laptop';
@@ -690,12 +712,12 @@ const app = {
                 <td><span class="badge ${device.risk_level.toLowerCase()}">${device.risk_level}</span></td>
             `;
             tbody.appendChild(tr);
-            
+
             if (index === 0) {
                 console.log('[Render] First device:', device.ip, device.mac, device.hostname);
             }
         });
-        
+
         console.log(`[Render] Successfully rendered ${this.devices.length} devices`);
     },
 
@@ -707,7 +729,7 @@ const app = {
 
     renderDeviceDetails() {
         const emptyState = document.getElementById("detailsEmptyState");
-        const content    = document.getElementById("detailsContent");
+        const content = document.getElementById("detailsContent");
 
         if (!emptyState) return;
 
@@ -723,29 +745,29 @@ const app = {
         const dev = this.selectedDevice;
 
         let icon = 'fa-laptop';
-        if (dev.protocol === 'Zigbee')    icon = 'fa-brands fa-zigbee';
+        if (dev.protocol === 'Zigbee') icon = 'fa-brands fa-zigbee';
         else if (dev.protocol === 'Matter') icon = 'fa-hubspot';
         else if (dev.protocol === 'Bluetooth') icon = 'fa-brands fa-bluetooth';
 
         document.getElementById("detailIcon").innerHTML = `<i class="fa-solid ${icon}"></i>`;
         document.getElementById("detailHostname").textContent = dev.hostname;
-        document.getElementById("detailIp").textContent       = dev.ip;
+        document.getElementById("detailIp").textContent = dev.ip;
 
         const badge = document.getElementById("detailRiskBadge");
-        badge.textContent  = dev.risk_level;
-        badge.className    = `risk-badge ${dev.risk_level.toLowerCase()}`;
-        const riskColors   = {
-            'SAFE':     'var(--status-safe)',
-            'MEDIUM':   'var(--status-medium)',
-            'RISK':     'var(--status-risk)',
+        badge.textContent = dev.risk_level;
+        badge.className = `risk-badge ${dev.risk_level.toLowerCase()}`;
+        const riskColors = {
+            'SAFE': 'var(--status-safe)',
+            'MEDIUM': 'var(--status-medium)',
+            'RISK': 'var(--status-risk)',
             'CRITICAL': '#c026d3',
         };
         badge.style.backgroundColor = riskColors[dev.risk_level] || 'var(--status-risk)';
         badge.style.color = '#fff';
 
         document.getElementById("detailVendor").textContent = dev.vendor;
-        document.getElementById("detailOs").textContent     = dev.os_guess;
-        document.getElementById("detailPorts").textContent  = dev.open_ports || "None";
+        document.getElementById("detailOs").textContent = dev.os_guess;
+        document.getElementById("detailPorts").textContent = dev.open_ports || "None";
 
         // ── Vulnerability grouping ────────────────────────────────
         const vulnList = document.getElementById("vulnList");
@@ -759,38 +781,38 @@ const app = {
         // Category definitions — order controls display order
         const CATEGORIES = [
             {
-                key:   'wireless',
+                key: 'wireless',
                 label: 'Wireless Security Findings',
-                icon:  'fa-wifi',
+                icon: 'fa-wifi',
                 color: '#8b5cf6',
-                match: v => ['WIRELESS_WEP_ENCRYPTION','WIRELESS_WPA1_ENCRYPTION','WIRELESS_OPEN_NETWORK',
-                             'WIRELESS_DEAUTH_VULN','WIRELESS_ROGUE_AP_INDICATOR','WIRELESS_DEFAULT_SSID'].includes(v.vuln_type),
+                match: v => ['WIRELESS_WEP_ENCRYPTION', 'WIRELESS_WPA1_ENCRYPTION', 'WIRELESS_OPEN_NETWORK',
+                    'WIRELESS_DEAUTH_VULN', 'WIRELESS_ROGUE_AP_INDICATOR', 'WIRELESS_DEFAULT_SSID'].includes(v.vuln_type),
             },
             {
-                key:   'ports',
+                key: 'ports',
                 label: 'Open Ports',
-                icon:  'fa-ethernet',
+                icon: 'fa-ethernet',
                 color: '#3b82f6',
-                match: v => v.port != null && !['IOT_UPNP_EXPOSED','IOT_MDNS_EXPOSED'].includes(v.vuln_type),
+                match: v => v.port != null && !['IOT_UPNP_EXPOSED', 'IOT_MDNS_EXPOSED'].includes(v.vuln_type),
             },
             {
-                key:   'service',
+                key: 'service',
                 label: 'Service Fingerprints',
-                icon:  'fa-server',
+                icon: 'fa-server',
                 color: '#f59e0b',
                 match: v => v.vuln_type.startsWith('SERVICE_'),
             },
             {
-                key:   'iot',
+                key: 'iot',
                 label: 'IoT Risks',
-                icon:  'fa-microchip',
+                icon: 'fa-microchip',
                 color: '#ef4444',
                 match: v => v.vuln_type.startsWith('IOT_'),
             },
             {
-                key:   'other',
+                key: 'other',
                 label: 'Other Findings',
-                icon:  'fa-shield-halved',
+                icon: 'fa-shield-halved',
                 color: '#64748b',
                 match: () => true,   // catch-all
             },
@@ -801,28 +823,28 @@ const app = {
 
         // Build recommendations from vuln_type lookup
         const remediationMap = {
-            'SERVICE_TELNET_OPEN':           'Disable Telnet (port 23) and replace with SSH.',
-            'SERVICE_FTP_OPEN':              'Disable FTP (port 21). Use SFTP/SCP instead.',
-            'SERVICE_TFTP_OPEN':             'Disable TFTP (port 69) or restrict with ACLs.',
+            'SERVICE_TELNET_OPEN': 'Disable Telnet (port 23) and replace with SSH.',
+            'SERVICE_FTP_OPEN': 'Disable FTP (port 21). Use SFTP/SCP instead.',
+            'SERVICE_TFTP_OPEN': 'Disable TFTP (port 69) or restrict with ACLs.',
             'SERVICE_UNENCRYPTED_WEB_ADMIN': 'Enable HTTPS and redirect HTTP to HTTPS.',
-            'SERVICE_ALT_HTTP_NO_HTTPS':     'Ensure alt HTTP port is HTTPS-protected.',
-            'SERVICE_WEAK_SSH_BANNER':       'Update SSH server to a current OpenSSH release.',
-            'SERVICE_CAPTIVE_PORTAL_MISC':   'Secure captive portal with HTTPS and short session timeouts.',
-            'WIRELESS_WEP_ENCRYPTION':       'Replace WEP with WPA3 or WPA2-AES immediately.',
-            'WIRELESS_WPA1_ENCRYPTION':      'Upgrade to WPA2-AES or WPA3.',
-            'WIRELESS_OPEN_NETWORK':         'Enable WPA2/WPA3 encryption on this network.',
-            'WIRELESS_DEAUTH_VULN':          'Enable 802.11w (PMF) on the access point.',
-            'WIRELESS_ROGUE_AP_INDICATOR':   'Verify this AP is in your managed inventory.',
-            'IOT_UPNP_EXPOSED':              'Disable UPnP/SSDP — it allows automatic NAT hole-punching.',
-            'IOT_MDNS_EXPOSED':              'Restrict mDNS to local subnet only.',
-            'IOT_MQTT_UNAUTHENTICATED':      'Enable MQTT authentication and TLS.',
-            'IOT_COAP_UNSECURED':            'Implement DTLS for CoAP.',
-            'IOT_DEFAULT_CRED_INDICATOR':    'Change default credentials immediately.',
-            'IOT_TELNET_BOTNET_RISK':        'Disable Telnet on this IoT device immediately.',
-            'IOT_RISKY_VENDOR_FINGERPRINT':  'Check vendor security advisories, update firmware.',
-            'DEFAULT_CREDENTIALS':           'Change default credentials to a strong, unique password.',
-            'OPEN_TELNET':                   'Disable Telnet and use SSH for remote access.',
-            'OPEN_FTP':                      'Disable FTP and use SFTP/SCP for file transfers.',
+            'SERVICE_ALT_HTTP_NO_HTTPS': 'Ensure alt HTTP port is HTTPS-protected.',
+            'SERVICE_WEAK_SSH_BANNER': 'Update SSH server to a current OpenSSH release.',
+            'SERVICE_CAPTIVE_PORTAL_MISC': 'Secure captive portal with HTTPS and short session timeouts.',
+            'WIRELESS_WEP_ENCRYPTION': 'Replace WEP with WPA3 or WPA2-AES immediately.',
+            'WIRELESS_WPA1_ENCRYPTION': 'Upgrade to WPA2-AES or WPA3.',
+            'WIRELESS_OPEN_NETWORK': 'Enable WPA2/WPA3 encryption on this network.',
+            'WIRELESS_DEAUTH_VULN': 'Enable 802.11w (PMF) on the access point.',
+            'WIRELESS_ROGUE_AP_INDICATOR': 'Verify this AP is in your managed inventory.',
+            'IOT_UPNP_EXPOSED': 'Disable UPnP/SSDP — it allows automatic NAT hole-punching.',
+            'IOT_MDNS_EXPOSED': 'Restrict mDNS to local subnet only.',
+            'IOT_MQTT_UNAUTHENTICATED': 'Enable MQTT authentication and TLS.',
+            'IOT_COAP_UNSECURED': 'Implement DTLS for CoAP.',
+            'IOT_DEFAULT_CRED_INDICATOR': 'Change default credentials immediately.',
+            'IOT_TELNET_BOTNET_RISK': 'Disable Telnet on this IoT device immediately.',
+            'IOT_RISKY_VENDOR_FINGERPRINT': 'Check vendor security advisories, update firmware.',
+            'DEFAULT_CREDENTIALS': 'Change default credentials to a strong, unique password.',
+            'OPEN_TELNET': 'Disable Telnet and use SSH for remote access.',
+            'OPEN_FTP': 'Disable FTP and use SFTP/SCP for file transfers.',
         };
 
         const assigned = new Set();
@@ -907,41 +929,6 @@ const app = {
         vulnList.innerHTML = html;
     },
 
-    renderDeepScanCards(vulnerabilities, banners) {
-        const contentDiv = document.getElementById('deepScanContent');
-        if (!contentDiv) return;
-        contentDiv.innerHTML = '';
-
-        if (!vulnerabilities || vulnerabilities.length === 0) {
-            contentDiv.innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">No major vulnerabilities detected.</div>';
-            return;
-        }
-
-        vulnerabilities.forEach(vuln => {
-            const card = document.createElement('div');
-            card.className = 'vulnerability-card';
-            
-            const banner = (banners && banners[vuln.port]) || 'No banner captured';
-            
-            card.innerHTML = `
-                <div class="vuln-title">
-                    <span><i class="fa-solid fa-triangle-exclamation"></i> ${vuln.id || 'VULN_DETECTED'}</span>
-                    <span class="status-badge ${vuln.risk_level.toLowerCase()}">${vuln.risk_level}</span>
-                </div>
-                <div class="vuln-meta">
-                    PORT ${vuln.port} | SERVICE: ${vuln.service} | BANNER: ${banner}
-                </div>
-                <div class="vuln-desc" style="font-size: 13px; margin-bottom: 10px;">
-                    ${vuln.description}
-                </div>
-                <div class="vuln-remediation">
-                    <span class="remediation-label">Remediation Advice</span>
-                    ${vuln.remediation}
-                </div>
-            `;
-            contentDiv.appendChild(card);
-        });
-    },
 
 
     // Update input field when selection changes
@@ -952,17 +939,17 @@ const app = {
 
     async discoverNetworks() {
         const discoverBtn = document.querySelector('[onclick="app.discoverNetworks()"]');
-        
+
         // Show loading state
         if (discoverBtn) {
             discoverBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Discovering...';
             discoverBtn.disabled = true;
         }
-        
+
         try {
             const res = await authFetch(`${API_BASE}/iot/networks/discover`);
             const data = await res.json();
-            
+
             // Auto-fill the network input with the first discovered network
             if (data.networks && data.networks.length > 0) {
                 const networkInput = document.getElementById("networkInput");
@@ -970,7 +957,7 @@ const app = {
                     networkInput.value = data.networks[0].network;
                 }
             }
-            
+
         } catch (e) {
             console.error('Network discovery failed:', e);
         } finally {
@@ -985,14 +972,14 @@ const app = {
     async scanSsids() {
         const ssidsList = document.getElementById("ssidsList");
         const container = document.getElementById("nearbySsidsContainer");
-        
+
         container.classList.remove("hidden");
         ssidsList.innerHTML = '<div style="font-size: 11px; color: var(--text-muted);"><i class="fa-solid fa-satellite-dish fa-fade"></i> Scanning airwaves...</div>';
-        
+
         try {
             const res = await authFetch(`${API_BASE}/wireless/scan/ssids`);
             const data = await res.json();
-            
+
             if (data.status === "success" && data.ssids.length > 0) {
                 this.renderSsids(data.ssids);
             } else {
@@ -1006,19 +993,19 @@ const app = {
     renderSsids(ssids) {
         const ssidsList = document.getElementById("ssidsList");
         ssidsList.innerHTML = "";
-        
+
         ssids.forEach(net => {
             const div = document.createElement("div");
             div.className = "ssid-item";
             div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; background: rgba(255,255,255,0.05); border-radius: 4px; font-size: 11px;";
-            
+
             const signalColor = this.getSignalColor(net.rssi);
             const signalIcon = this.getSignalIcon(net.rssi);
-            
+
             let riskIcon = "";
             if (net.assessment_risks && net.assessment_risks.length > 0) {
-                const maxSeverity = net.assessment_risks.some(r => r.severity === 'CRITICAL') ? 'var(--status-risk)' : 
-                                  (net.assessment_risks.some(r => r.severity === 'HIGH') ? 'var(--status-risk)' : 'var(--status-medium)');
+                const maxSeverity = net.assessment_risks.some(r => r.severity === 'CRITICAL') ? 'var(--status-risk)' :
+                    (net.assessment_risks.some(r => r.severity === 'HIGH') ? 'var(--status-risk)' : 'var(--status-medium)');
                 const riskDesc = net.assessment_risks.map(r => r.desc).join(" | ");
                 riskIcon = `<i class="fa-solid fa-triangle-exclamation" style="color: ${maxSeverity}; margin-left: 5px;" title="${riskDesc}"></i>`;
             }
@@ -1033,13 +1020,13 @@ const app = {
                     <i class="fa-solid fa-lock" style="font-size: 9px;"></i> ${net.security.split(' ')[0]}
                 </div>
             `;
-            
+
             // Clicking SSID copies it to input for advanced scanning if user wants
             div.style.cursor = "pointer";
             div.onclick = () => {
                 this.showToast(`Selected SSID: ${net.ssid}`, 'info');
             };
-            
+
             ssidsList.appendChild(div);
         });
     },
@@ -1064,10 +1051,10 @@ const app = {
         const progressContainer = document.getElementById("scanProgressContainer");
         const statusText = document.getElementById("scanStatusText");
         const progressBar = document.getElementById("scanProgressBar");
-        
+
         progressContainer.classList.remove("hidden");
         progressBar.style.width = "0%";
-        
+
         let url = "";
         let body = null;
 
@@ -1076,10 +1063,10 @@ const app = {
             const network = networkInput?.value;
             if (!network) {
                 statusText.textContent = "Please enter a network range";
-                setTimeout(()=> progressContainer.classList.add("hidden"), 3000);
+                setTimeout(() => progressContainer.classList.add("hidden"), 3000);
                 return;
             }
-            
+
             url = `${API_BASE}/iot/scan/wifi`;
             body = JSON.stringify({ network: network, timeout: 60 });
         } else if (type === 'matter') {
@@ -1097,14 +1084,14 @@ const app = {
         }
 
         try {
-            const reqData = { method: "POST", headers: {"Content-Type": "application/json"} };
+            const reqData = { method: "POST", headers: { "Content-Type": "application/json" } };
             if (body) reqData.body = body;
-            
+
             const res = await authFetch(url, reqData);
             const data = await res.json();
             statusText.textContent = data.message;
             if (data.status === 'error') {
-                setTimeout(()=> progressContainer.classList.add("hidden"), 3000);
+                setTimeout(() => progressContainer.classList.add("hidden"), 3000);
                 return;
             }
 
@@ -1130,7 +1117,7 @@ const app = {
         try {
             const res = await authFetch(`${API_BASE}/iot/scan/status`);
             const data = await res.json();
-            
+
             console.log('[Polling] Status:', data);
             document.getElementById("scanStatusText").textContent = data.message;
             if (data.progress > 0) {
@@ -1187,20 +1174,26 @@ const app = {
             return;
         }
 
-        const resultsDiv   = document.getElementById('deepScanResults');
-        const progressDiv  = document.getElementById('deepScanProgress');
-        const contentDiv   = document.getElementById('deepScanContent');
-        const phaseText    = document.getElementById('deepScanPhase');
-        const progressBar  = document.getElementById('deepScanProgressBar');
-        
+        const resultsDiv = document.getElementById('deepScanResults');
+        const progressDiv = document.getElementById('deepScanProgress');
+        const contentDiv = document.getElementById('deepScanContent');
+        const phaseText = document.getElementById('deepScanPhase');
+        const progressBar = document.getElementById('deepScanProgressBar');
+
         const credPanel = document.getElementById('credTestPanel');
         if (credPanel) credPanel.classList.add('hidden');
-        
-        if (resultsDiv)  resultsDiv.classList.remove('hidden');
+
+        if (resultsDiv) resultsDiv.classList.remove('hidden');
         if (progressDiv) progressDiv.classList.remove('hidden');
-        if (contentDiv)  contentDiv.innerHTML = '';
-        if (phaseText)   phaseText.textContent = 'Initializing deep scan...';
+        if (contentDiv) contentDiv.innerHTML = '';
+        if (phaseText) phaseText.textContent = 'Initializing deep scan...';
         if (progressBar) progressBar.style.width = '0%';
+
+        // Clear previous AI Analysis results
+        const aiAnalysisDiv = document.getElementById('aiDeviceAnalysis');
+        if (aiAnalysisDiv) aiAnalysisDiv.classList.add('hidden');
+        const summaryText = document.getElementById('aiSummaryText');
+        if (summaryText) summaryText.textContent = 'Analyzing scan data...';
 
         const ipEl = document.getElementById('deepScanIp');
         const vendorEl = document.getElementById('deepScanVendor');
@@ -1221,9 +1214,18 @@ const app = {
     renderDeepScanCards(vulnerabilities, serviceBanners, openPorts = []) {
         const contentDiv = document.getElementById('deepScanContent');
         if (!contentDiv) return;
-        
+
         contentDiv.innerHTML = '';
-        
+
+        if (!openPorts || openPorts.length === 0) {
+            contentDiv.innerHTML = `
+                <div style="text-align:center; padding: 40px; color: var(--text-muted);">
+                    <i class="fa-solid fa-shield-check" style="font-size: 24px; color: #22c55e; display: block; margin-bottom: 10px;"></i>
+                    No open ports detected. The target appears secure.
+                </div>`;
+            return;
+        }
+
         // 1. Technical Port Audit Section
         const techSection = document.createElement('div');
         techSection.className = 'tech-audit-section';
@@ -1247,16 +1249,16 @@ const app = {
             </div>
         `;
         contentDiv.appendChild(techSection);
-        
+
         const body = techSection.querySelector('#techAuditBody');
         const sortedPorts = [...openPorts].sort((a, b) => a - b);
-        
+
         sortedPorts.forEach(port => {
             const banner = serviceBanners && serviceBanners[port] ? serviceBanners[port] : 'Unknown Service';
             const vuln = vulnerabilities ? vulnerabilities.find(v => v.port == port) : null;
             const tr = document.createElement('tr');
             tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
-            
+
             tr.innerHTML = `
                 <td style="padding: 10px; font-family: monospace; font-weight: bold; color: var(--accent-blue);">${port}/tcp</td>
                 <td style="padding: 10px; color: var(--text-color);">${banner}</td>
@@ -1281,11 +1283,11 @@ const app = {
             vulnerabilities.forEach(v => {
                 const card = document.createElement('div');
                 card.className = `vuln-item ${v.severity.toUpperCase()}`;
-                
+
                 let icon = 'fa-triangle-exclamation';
                 if (v.severity === 'CRITICAL') icon = 'fa-skull-crossbones';
                 if (v.severity === 'LOW') icon = 'fa-circle-info';
-                
+
                 card.innerHTML = `
                     <div class="vuln-header">
                         <span class="vuln-type"><i class="fa-solid ${icon}"></i> ${v.vuln_type}</span>
@@ -1304,17 +1306,17 @@ const app = {
 
     async testCreds() {
         if (!this.selectedDevice) return;
-        
+
         // Check if device has a valid IP (not Z-Wave, BLE, etc.)
         const ip = this.selectedDevice.ip;
         if (ip.startsWith('ZW:') || ip.startsWith('BLE_') || ip.startsWith('ZB:')) {
             this.showToast(`Credential testing is not available for ${this.selectedDevice.protocol} devices.`, 'warning');
             return;
         }
-        
+
         const dscan = document.getElementById('deepScanResults');
         if (dscan) dscan.classList.add('hidden');
-        
+
         const pnl = document.getElementById('credTestPanel');
         if (pnl) {
             pnl.classList.remove('hidden');
@@ -1323,7 +1325,7 @@ const app = {
             const sumPanel = document.getElementById('credTestSummary');
             if (sumPanel) sumPanel.classList.add('hidden');
         }
-        
+
         try {
             await authFetch(`${API_BASE}/wireless/test/credentials/${ip}`, { method: "POST" });
         } catch (e) {
@@ -1345,7 +1347,7 @@ const app = {
                 this.renderCardsTable();
                 this.renderVulnMatrix();
             }
-        } catch(e) {
+        } catch (e) {
             console.error("Failed to load cards report");
         }
     },
@@ -1375,7 +1377,7 @@ const app = {
                             matrix[v.vuln_type].found = true;
                         }
                     });
-                } catch(e) {}
+                } catch (e) { }
             }
         });
 
@@ -1391,7 +1393,7 @@ const app = {
         const tbody = document.getElementById("cardsTableBody");
         if (!tbody) return;
         tbody.innerHTML = "";
-        
+
         if (this.rfidCards.length === 0) {
             tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-muted)">No cards scanned yet.</td></tr>`;
             return;
@@ -1403,7 +1405,7 @@ const app = {
             if (this.selectedRfidCard && this.selectedRfidCard.id === c.id) {
                 tr.classList.add("active");
             }
-            
+
             tr.onclick = () => this.selectRfidCard(c.id);
 
             tr.innerHTML = `
@@ -1441,7 +1443,7 @@ const app = {
         if (rfidAttackPanel) rfidAttackPanel.classList.remove("hidden");
 
         const c = this.selectedRfidCard;
-        
+
         let vulns = [];
         try {
             vulns = JSON.parse(c.vulnerabilities_json || "[]");
@@ -1479,7 +1481,7 @@ const app = {
 
         const noAttackMsg = document.getElementById("rfidNoAttackMsg");
         const dynamicNav = document.getElementById("dynamicAttackNav");
-        
+
         if (vulns.length === 0 || c.risk_level === 'SAFE') {
             if (noAttackMsg) noAttackMsg.classList.remove("hidden");
             if (dynamicNav) dynamicNav.classList.add("hidden");
@@ -1488,7 +1490,7 @@ const app = {
             if (dynamicNav) {
                 dynamicNav.classList.remove("hidden");
                 dynamicNav.innerHTML = '';
-                
+
                 // Restore all 5 attack modules as requested
                 const possibleAttacks = new Set();
                 possibleAttacks.add('Clone');
@@ -1496,13 +1498,13 @@ const app = {
                 possibleAttacks.add('Eavesdropping');
                 possibleAttacks.add('Tampering');
                 possibleAttacks.add('Impersonation');
-                
+
                 // Fallback: if vulnerable but no specific attacks matched, allow Clone/Replay
                 if (possibleAttacks.size === 0) {
                     possibleAttacks.add('Clone');
                     possibleAttacks.add('Replay');
                 }
-                
+
                 possibleAttacks.forEach(attack => {
                     const btn = document.createElement("button");
                     btn.className = "attack-nav-btn";
@@ -1511,7 +1513,7 @@ const app = {
                     btn.onclick = () => this.simulateAttack(attack);
                     dynamicNav.appendChild(btn);
                 });
-                
+
                 this.updateSimulationUI(); // Enforce simulation mode toggle states
             }
         }
@@ -1557,7 +1559,7 @@ const app = {
             if (data.status === 'success' && this.rfidCards.length > 0) {
                 this.selectRfidCard(this.rfidCards[0].id);
             }
-        } catch(e) {
+        } catch (e) {
             console.error("Scan error:", e);
             status.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> Error scanning card.';
             status.style.color = "var(--status-risk)";
@@ -1572,7 +1574,7 @@ const app = {
 
         const logPanel = document.getElementById('attackConsoleLogs');
         const remPanel = document.getElementById('attackResultSummary');
-        
+
         if (logPanel) logPanel.innerHTML = '<div class="terminal-line">Initializing Attack: ' + attackType + '...</div>';
         if (remPanel) remPanel.classList.add('hidden');
 
@@ -1604,7 +1606,7 @@ const app = {
             this.selectedRfidCard = null;
             this.fetchCards();
             this.renderRfidCardDetails();
-        } catch(e) { }
+        } catch (e) { }
     },
 
     async fetchRfidReports() {
@@ -1640,7 +1642,7 @@ const app = {
                 `;
                 tbody.appendChild(tr);
             });
-        } catch(e) {
+        } catch (e) {
             console.error('Failed to load RFID reports', e);
         }
     },
@@ -1662,12 +1664,12 @@ const app = {
                 risk: this.devices.filter(d => d.risk_level === 'RISK').length
             }
         };
-        
+
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `pentexone_scan_${new Date().toISOString().slice(0,10)}.json`;
+        a.download = `pentexone_scan_${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         URL.revokeObjectURL(url);
         this.showToast('JSON export downloaded', 'success');
@@ -1679,12 +1681,12 @@ const app = {
         this.devices.forEach(d => {
             csv += `"${d.ip}","${d.mac}","${d.hostname}","${d.vendor}","${d.protocol}","${d.os_guess}","${d.risk_level}",${d.risk_score},"${d.open_ports}"\n`;
         });
-        
+
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `pentexone_devices_${new Date().toISOString().slice(0,10)}.csv`;
+        a.download = `pentexone_devices_${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
         URL.revokeObjectURL(url);
         this.showToast('CSV export downloaded', 'success');
@@ -1712,56 +1714,56 @@ const app = {
             console.warn('[HW Status] Container #hardwareStatus not found');
             return;
         }
-        
+
         // Extract data from multiple possible paths
         const summary = data.summary || {};
         const dongles = data.dongles || {};
-        
+
         // Zigbee: try summary first, then dongles
         const zigbeeConnected = summary.zigbee?.connected || (dongles.zigbee !== null && dongles.zigbee !== undefined);
         const zigbeePort = summary.zigbee?.port || dongles.zigbee?.port || '';
         const zigbeeChip = summary.zigbee?.chip || dongles.zigbee?.chip || '';
         const zigbeeReady = summary.zigbee?.ready || false;
-        
+
         // Thread
         const threadConnected = summary.thread?.connected || (dongles.thread !== null && dongles.thread !== undefined);
         const threadPort = summary.thread?.port || dongles.thread?.port || '';
-        
+
         // Z-Wave
         const zwaveConnected = summary.zwave?.connected || (dongles.zwave !== null && dongles.zwave !== undefined);
         const zwavePort = summary.zwave?.port || dongles.zwave?.port || '';
-        
+
         // Bluetooth
         const btConnected = summary.bluetooth?.connected || (dongles.bluetooth !== null && dongles.bluetooth !== undefined);
-        
+
         console.log(`[HW Status] Zigbee: connected=${zigbeeConnected}, port=${zigbeePort}, chip=${zigbeeChip}, ready=${zigbeeReady}`);
-        
+
         let html = '<div style="display: flex; flex-wrap: wrap; gap: 10px;">';
-        
+
         // Zigbee dongle
         html += `<div class="hw-status-item ${zigbeeConnected ? 'connected' : 'disconnected'}">
             <i class="fa-solid fa-usb"></i>
             <span>Zigbee: ${zigbeeConnected ? zigbeePort + ' (' + zigbeeChip + ')' : 'Not Connected'}</span>
         </div>`;
-        
+
         // Thread dongle
         html += `<div class="hw-status-item ${threadConnected ? 'connected' : 'disconnected'}">
             <i class="fa-solid fa-usb"></i>
             <span>Thread: ${threadConnected ? threadPort : 'Not Connected'}</span>
         </div>`;
-        
+
         // Z-Wave dongle
         html += `<div class="hw-status-item ${zwaveConnected ? 'connected' : 'disconnected'}">
             <i class="fa-solid fa-usb"></i>
             <span>Z-Wave: ${zwaveConnected ? zwavePort : 'Not Connected'}</span>
         </div>`;
-        
+
         // Bluetooth
         html += `<div class="hw-status-item connected">
             <i class="fa-brands fa-bluetooth-b"></i>
             <span>Bluetooth: Built-in</span>
         </div>`;
-        
+
         html += '</div>';
         container.innerHTML = html;
     },
@@ -1771,7 +1773,7 @@ const app = {
             try {
                 await authFetch(`${API_BASE}/iot/devices`, { method: "DELETE" });
                 await authFetch(`${API_BASE}/rfid/cards`, { method: "DELETE" });
-                
+
                 // Clear State
                 this.devices = [];
                 this.rfidCards = [];
@@ -1787,13 +1789,13 @@ const app = {
                 this.updateProtocolChart();
                 this.fetchAISuggestions();
                 this.fetchAISecurityScore();
-                
+
                 // Hide results panels
                 const deepRes = document.getElementById('deepScanResults');
                 if (deepRes) deepRes.classList.add('hidden');
                 const aiRes = document.getElementById('aiDeviceAnalysis');
                 if (aiRes) aiRes.classList.add('hidden');
-                
+
                 this.showToast('All system data cleared successfully', 'success');
             } catch (e) {
                 console.error(e);
@@ -1801,7 +1803,7 @@ const app = {
             }
         }
     },
-    
+
     // ======== AI FUNCTIONS ========
     async fetchAISuggestions() {
         try {
@@ -1814,11 +1816,11 @@ const app = {
             console.error("Failed to fetch AI suggestions", e);
         }
     },
-    
+
     renderAISuggestions(suggestions) {
         const container = document.getElementById('aiSuggestions');
         if (!container) return;
-        
+
         if (!suggestions || suggestions.length === 0) {
             container.innerHTML = `
                 <div style="color: var(--text-muted); font-size: 12px; text-align: center; padding: 20px;">
@@ -1827,7 +1829,7 @@ const app = {
                 </div>`;
             return;
         }
-        
+
         container.innerHTML = suggestions.map(s => `
             <div class="ai-suggestion-item" style="
                 display: flex;
@@ -1850,7 +1852,7 @@ const app = {
             </div>
         `).join('');
     },
-    
+
     executeSuggestion(action, deviceIds) {
         if (action.startsWith('startScan')) {
             const scanType = action.match(/'([^']+)'/)?.[1];
@@ -1863,7 +1865,7 @@ const app = {
             this.fetchHardwareStatus();
         }
     },
-    
+
     async fetchAISecurityScore() {
         try {
             const res = await authFetch(`${API_BASE}/ai/security-score`);
@@ -1875,90 +1877,106 @@ const app = {
             console.error("Failed to fetch AI security score", e);
         }
     },
-    
+
     renderAISecurityScore(score) {
         const scoreValue = document.getElementById('scoreValue');
         const scoreGrade = document.getElementById('scoreGrade');
         const scoreDesc = document.getElementById('scoreDescription');
         const scoreCircle = document.getElementById('securityScoreCircle');
-        
+
         if (!scoreValue) return;
-        
+
         // Determine color based on score
         let color = '#22c55e'; // green
         if (score.score < 60) color = '#f59e0b'; // yellow
         if (score.score < 40) color = '#ef4444'; // red
-        
+
         scoreValue.textContent = Math.round(score.score);
         scoreGrade.textContent = score.grade;
         scoreDesc.textContent = score.description;
-        
+
         // Update circle gradient
         scoreCircle.style.background = `conic-gradient(${color} 0% ${score.score}%, rgba(255,255,255,0.1) ${score.score}% 100%)`;
     },
-    
-    async analyzeDeviceAI() {
-        if (!this.selectedDevice) return;
-        
+
+    renderAIAnalysis(analysis) {
         const analysisDiv = document.getElementById('aiDeviceAnalysis');
         const deviceTypeDiv = document.getElementById('aiDeviceType');
+        const summaryDiv = document.getElementById('aiDynamicSummary');
         const predictedVulnsDiv = document.getElementById('aiPredictedVulns');
-        
-        if (analysisDiv) {
-            analysisDiv.classList.remove('hidden');
-            deviceTypeDiv.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Analyzing...';
-            predictedVulnsDiv.innerHTML = '';
+
+        if (!analysisDiv) return;
+
+        analysisDiv.classList.remove('hidden');
+
+        // Device type
+        if (deviceTypeDiv) {
+            deviceTypeDiv.innerHTML = `
+                <strong>Device Type:</strong> ${analysis.device_type.replace('_pattern', '').replace('_', ' ').toUpperCase()}
+                <span style="margin-left: 10px; opacity: 0.7;">Confidence: ${Math.round(analysis.confidence * 100)}%</span>
+            `;
         }
-        
+
+        // Dynamic Summary
+        if (summaryDiv && analysis.dynamic_summary) {
+            summaryDiv.innerHTML = `<i class="fa-solid fa-quote-left" style="opacity:0.3; margin-right:8px;"></i>${analysis.dynamic_summary}`;
+        }
+
+        // Predicted vulnerabilities
+        if (predictedVulnsDiv) {
+            if (analysis.predicted_vulnerabilities && analysis.predicted_vulnerabilities.length > 0) {
+                predictedVulnsDiv.innerHTML = `
+                    <strong style="display: block; margin-top: 8px;">Predicted Vulnerabilities:</strong>
+                    ${analysis.predicted_vulnerabilities.map(v => `
+                        <div style="margin-top: 4px; padding: 4px 8px; background: rgba(239, 68, 68, 0.2); border-radius: 4px; font-size: 10px;">
+                            <i class="fa-solid fa-triangle-exclamation" style="color: var(--status-risk);"></i>
+                            ${v.vuln_type} (${Math.round(v.confidence * 100)}% confidence)
+                        </div>
+                    `).join('')}
+                `;
+            } else {
+                predictedVulnsDiv.innerHTML = `
+                    <span style="color: var(--status-safe); margin-top: 8px; display: block;">
+                        <i class="fa-solid fa-check"></i> No predicted vulnerabilities
+                    </span>`;
+            }
+        }
+
+        if (analysis.is_anomaly) {
+            this.showToast('Anomaly detected! Device behavior is unusual.', 'warning');
+        }
+    },
+
+    async analyzeDeviceAI() {
+        if (!this.selectedDevice) return;
+
+        const btn = document.querySelector('.ai-analysis-btn[onclick="app.analyzeDeviceAI()"]');
+        const originalText = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing AI Analysis...';
+            btn.disabled = true;
+        }
+
         try {
             const res = await authFetch(`${API_BASE}/ai/analyze/device/${this.selectedDevice.id}`);
             if (res.ok) {
                 const data = await res.json();
-                const analysis = data.analysis;
-                
-                // Device type
-                deviceTypeDiv.innerHTML = `
-                    <strong>Device Type:</strong> ${analysis.device_type.replace('_pattern', '').replace('_', ' ').toUpperCase()}
-                    <span style="margin-left: 10px; opacity: 0.7;">Confidence: ${Math.round(analysis.confidence * 100)}%</span>
-                `;
-                
-                // Dynamic Summary
-                const summaryDiv = document.getElementById('aiDynamicSummary');
-                if (summaryDiv && analysis.dynamic_summary) {
-                    summaryDiv.innerHTML = `<i class="fa-solid fa-quote-left" style="opacity:0.3; margin-right:8px;"></i>${analysis.dynamic_summary}`;
-                }
-                
-                // Predicted vulnerabilities
-                if (analysis.predicted_vulnerabilities && analysis.predicted_vulnerabilities.length > 0) {
-                    predictedVulnsDiv.innerHTML = `
-                        <strong style="display: block; margin-top: 8px;">Predicted Vulnerabilities:</strong>
-                        ${analysis.predicted_vulnerabilities.map(v => `
-                            <div style="margin-top: 4px; padding: 4px 8px; background: rgba(239, 68, 68, 0.2); border-radius: 4px; font-size: 10px;">
-                                <i class="fa-solid fa-triangle-exclamation" style="color: var(--status-risk);"></i>
-                                ${v.vuln_type} (${Math.round(v.confidence * 100)}% confidence)
-                            </div>
-                        `).join('')}
-                    `;
-                } else {
-                    predictedVulnsDiv.innerHTML = `
-                        <span style="color: var(--status-safe); margin-top: 8px; display: block;">
-                            <i class="fa-solid fa-check"></i> No predicted vulnerabilities
-                        </span>`;
-                }
-                
-                // Show anomaly warning if detected
-                if (analysis.is_anomaly) {
-                    this.showToast('Anomaly detected! Device behavior is unusual.', 'warning');
-                }
+                this.renderAIAnalysis(data.analysis);
+                this.showToast('AI analysis completed successfully', 'success');
+            } else {
+                this.showToast('Failed to process AI analysis', 'risk');
             }
         } catch (e) {
             console.error('AI analysis failed', e);
-            if (deviceTypeDiv) {
-                deviceTypeDiv.innerHTML = '<span style="color: var(--status-risk);">Analysis failed</span>';
+            this.showToast('Failed to process AI analysis', 'risk');
+        } finally {
+            if (btn) {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
             }
         }
     },
-    
+
     async getRemediation(vulnType) {
         try {
             const res = await authFetch(`${API_BASE}/ai/remediation/${vulnType}`);
@@ -1990,12 +2008,12 @@ const app = {
             if (res.ok) {
                 const data = await res.json();
                 const analysis = data.analysis;
-                
+
                 // Show result in a modal or append to the summary
                 const remPanel = document.getElementById('attackResultSummary');
                 if (remPanel) {
                     remPanel.classList.remove('hidden');
-                    
+
                     let insightsHtml = '';
                     if (analysis.insights && analysis.insights.length > 0) {
                         insightsHtml = `

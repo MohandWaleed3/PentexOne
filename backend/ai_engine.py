@@ -265,39 +265,58 @@ class AISecurityEngine:
         confidence = self._calculate_confidence(device, device_type)
         
         # Generate dynamic summary based ONLY on current scan output
-        ports_list = [p.strip() for p in str(device.get("open_ports", "")).split(",") if p.strip()]
+        raw_ports = device.get("open_ports")
+        if raw_ports is None or raw_ports == "None":
+            ports_list = []
+        else:
+            ports_list = [p.strip() for p in str(raw_ports).split(",") if p.strip()]
+            
         num_ports = len(ports_list)
         vulns = device.get("vulnerabilities", [])
         num_vulns = len(vulns)
-        risk_lvl = device.get('risk_level', 'UNKNOWN').upper()
+        risk_lvl = str(device.get('risk_level', 'UNKNOWN')).upper()
+        hostname = device.get('hostname', 'Host ' + device.get('ip', 'N/A'))
         
-        # Phrases for dynamic synthesis
-        risk_phrases = {
-            "CRITICAL": ["represents a critical threat to network integrity", "exhibits severe security compromises", "is highly vulnerable to immediate exploitation"],
-            "HIGH": ["shows significant security gaps", "possesses multiple high-risk entry points", "requires urgent security hardening"],
-            "MEDIUM": ["presents a moderate risk profile", "has several security misconfigurations", "requires configuration review"],
-            "LOW": ["is relatively secure but has minor issues", "shows minimal exposure", "is well-hardened with few findings"],
-            "SAFE": ["appears securely configured", "meets current security baseline standards", "shows no immediate vulnerabilities"]
-        }
-        
-        selected_risk_phrase = risk_phrases.get(risk_lvl, ["has an undefined risk profile"])[num_ports % len(risk_phrases.get(risk_lvl, ["..."]))]
-        
-        summary = f"Pentex AI Analysis: {device.get('hostname', 'Host ' + device.get('ip', 'N/A'))} {selected_risk_phrase}. "
-        
-        if num_ports > 0:
-            summary += f"The scanner identified {num_ports} active services. "
-            if any(p in ['21', '23', '445', '3389'] for p in ports_list):
-                summary += f"Critical protocol exposure detected on ports {', '.join([p for p in ports_list if p in ['21', '23', '445', '3389']][:2])}. "
-        
-        if num_vulns > 0:
-            high_vulns = [v for v in vulns if v.get("severity", "").upper() in ["CRITICAL", "HIGH"]]
-            summary += f"A total of {num_vulns} rule-based vulnerabilities were mapped. "
-            if high_vulns:
-                summary += f"Priority remediation is required for {high_vulns[0].get('vuln_type', 'unspecified')} due to its {high_vulns[0].get('severity')} impact. "
+        # 2. Base Narrative Construction
+        if risk_lvl == "CRITICAL":
+            base = f"Pentex AI has identified severe architectural vulnerabilities on {hostname} that pose an immediate risk to your infrastructure. "
+        elif risk_lvl == "HIGH":
+            base = f"Security analysis of {hostname} reveals a significant attack surface with high-risk exposure points. "
+        elif risk_lvl == "MEDIUM":
+            base = f"{hostname} exhibits a moderate risk profile, likely due to legacy services or common misconfigurations. "
+        elif risk_lvl == "LOW":
+            base = f"The security posture of {hostname} is generally well-hardened, though minor refinements are suggested. "
         else:
-            summary += "No specific vulnerability patterns were matched against the current service banners. "
-            
-        summary += f"Overall AI confidence in this assessment is {int(confidence * 100)}% based on {device_type.replace('_', ' ')} heuristics."
+            base = f"{hostname} meets the current Pentex security baseline for a hardened device. "
+
+        # 3. Service-Specific Insights
+        service_msg = ""
+        if num_ports > 0:
+            service_msg = f"Our scan mapped {num_ports} active TCP/IP services. "
+            if any(p in ['21', '23', '445'] for p in ports_list):
+                unsafe = [p for p in ports_list if p in ['21', '23', '445']]
+                service_msg += f"Critical exposure of unencrypted or legacy protocols ({', '.join(unsafe)}) was detected. "
+            elif '22' in ports_list or '443' in ports_list:
+                service_msg += "The presence of encrypted management interfaces (SSH/HTTPS) suggests an intentional security design. "
+        else:
+            service_msg = "No accessible network services were discovered during this audit cycle. "
+
+        # 4. Vulnerability Synthesis
+        vuln_msg = ""
+        if num_vulns > 0:
+            top_vuln = vulns[0]
+            v_type = top_vuln.get('vuln_type') or top_vuln.get('id') or 'service patches'
+            v_sev = top_vuln.get('severity') or top_vuln.get('risk_level') or 'detected'
+            vuln_msg = f"The automated audit successfully mapped {num_vulns} distinct vulnerabilities. "
+            if risk_lvl in ["CRITICAL", "HIGH"]:
+                vuln_msg += f"Strategic focus should be placed on {v_type} to mitigate the {v_sev} risk detected. "
+        elif num_ports > 0:
+            vuln_msg = "While services are exposed, no known vulnerability signatures were matched in this passive scan. "
+        else:
+            vuln_msg = "The device exhibits a minimized attack surface with zero detected service vulnerabilities. "
+
+        # 5. Conclusion & Confidence
+        summary = f"{base}{service_msg}{vuln_msg}AI confidence for this assessment is {int(confidence * 100)}%."
 
         return {
             "device_type": device_type,

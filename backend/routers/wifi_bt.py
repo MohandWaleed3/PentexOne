@@ -35,6 +35,7 @@ from ai_engine import analyze_single_device
 from routers.iot import get_hostname_enhanced, get_vendor_from_mac
 from websocket_manager import manager
 from security_assessment import SecurityAssessmentLayer
+from nmap_scanner import PentexNmapScanner
 
 router = APIRouter(prefix="/wireless", tags=["WiFi & Bluetooth"])
 
@@ -158,152 +159,90 @@ async def deep_scan_device_api(ip: str, background_tasks: BackgroundTasks):
 async def run_port_scan(ip: str, db_session: Session = None):
     """
     Advanced Deep Port Scan:
-    1. Discovery scan
-    2. Service version detection (-sV)
-    3. Vulnerability assessment (--script vuln)
+    Aggregates all findings before broadcasting a single 'scan_complete' event.
     """
     db = db_session or SessionLocal()
+    # 1. State Containers (Single Source of Truth)
+    open_ports = []
+    vulnerabilities = []
+    service_banners = {}
+    proto = "tcp"
+    
     try:
         manager.broadcast({
             "event": "scan_start",
             "type": "deep_port_scan",
             "ip": ip,
-            "message": f"Initializing Dynamic Deep Scan for {ip}..."
+            "message": f"Initializing scan for {ip}..."
         })
 
+        # 2. Check Mode
         sim_setting = db.query(Setting).filter(Setting.key == "simulation_mode").first()
         is_sim = sim_setting and sim_setting.value.lower() == "true"
+        
+        real_results = None
+        if not is_sim:
+            scanner = PentexNmapScanner()
+            manager.broadcast({
+                "event": "scan_progress", "type": "deep_port_scan",
+                "progress": 20, "message": "Executing Nmap scan..."
+            })
+            real_results = await asyncio.to_thread(scanner.scan, ip)
 
-        # Determine scan mode
-        def execute_deep_nmap():
-            if is_sim:
-                raise Exception("Simulation Mode Enabled")
-            
-            # Hybrid Engine: Check reachability first
-            nm = nmap.PortScanner()
-            # Fast ping scan to check if host is up
-            nm.scan(hosts=ip, arguments="-sn -T4")
-            if ip not in nm.all_hosts():
-                # Host not responding to ping, maybe it's firewall or just simulated IP
-                raise Exception("Host unreachable or not local - falling back to simulation")
-            
-            # Host is UP, run deep scan
-            nm.scan(hosts=ip, arguments="-sV --script vuln -T4 --open -p 1-1000")
-            return nm
-
-        manager.broadcast({
-            "event": "scan_progress",
-            "type": "deep_port_scan",
-            "progress": 30,
-            "message": "Running Hybrid port discovery..."
-        })
-        await asyncio.sleep(1.0)
-
-        nm = None
-        try:
-            nm = await asyncio.to_thread(execute_deep_nmap)
-        except Exception as e:
-            logger.info(f"Hybrid Engine: {e}. Using deterministic simulation.")
-
-        manager.broadcast({
-            "event": "scan_progress",
-            "type": "deep_port_scan",
-            "progress": 70,
-            "message": "Analyzing Hybrid results..."
-        })
-        await asyncio.sleep(1.0)
-
-        open_ports = []
-        vulnerabilities = []
-        service_banners = {}
-        proto = "tcp"
-
-        if nm and ip in nm.all_hosts() and nm[ip].all_protocols():
-            # ── REAL SCAN DATA PROCESSING ──────────────────────────
-            for p in nm[ip][proto].keys():
-                svc = nm[ip][proto][p]
-                if svc["state"] == "open":
+        # 3. Data Collection
+        if real_results and not real_results.get("error") and real_results.get("ports"):
+            logger.info(f"[Scan] Processing {len(real_results['ports'])} real ports for {ip}")
+            for p_info in real_results["ports"]:
+                if p_info["state"] == "open":
+                    p = p_info["port"]
                     open_ports.append(p)
-                    banner = f"{svc.get('product','') or 'unknown'} {svc.get('version','') or ''}".strip()
-                    service_banners[str(p)] = banner or svc.get("name", "unknown")
-                    
-                    # Process real script vulnerabilities
-                    if "script" in svc:
-                        for script_name, script_output in svc["script"].items():
-                            if "vuln" in script_name or "exploit" in script_name:
-                                risk_level = "Medium"
-                                if "critical" in script_output.lower(): risk_level = "Critical"
-                                elif "high" in script_output.lower(): risk_level = "High"
-                                elif "low" in script_output.lower(): risk_level = "Low"
-                                
-                                vulnerabilities.append({
-                                    "id": script_name,
-                                    "port": p,
-                                    "service": svc.get("name", str(p)),
-                                    "risk_level": risk_level,
-                                    "description": script_output.strip()[:500],
-                                    "remediation": f"Update {svc.get('name')} and apply patches for {script_name}."
-                                })
-                    
-                    # Apply VULN_RULES as secondary audit for real ports
+                    service_banners[str(p)] = p_info["version"] or p_info["service"]
                     if p in VULN_RULES:
-                        # Only add if not already flagged by a script to avoid duplication
-                        if not any(v["port"] == p for v in vulnerabilities):
-                            vid, rlvl, vsvc, desc, rem = VULN_RULES[p]
-                            vulnerabilities.append({
-                                "id": vid, "port": p, "service": vsvc,
-                                "risk_level": rlvl, "description": desc, "remediation": rem
-                            })
-        else:
-            # ── SIMULATION FALLBACK ──────────────────────────────
-            env_salt = "pentex_one_secure_v2"
-            seed_str = f"{ip}_{int(time.time()) // 60}_{env_salt}" # Stabilize per minute
-            seed_int = int(hashlib.md5(seed_str.encode()).hexdigest(), 16)
-            rng = random.Random(seed_int)
-
-            num_ports = rng.randint(8, 30)
-            well_known = list(SERVICES_MAP.keys())
-            k_wk = rng.randint(4, min(12, len(well_known)))
-            open_ports = rng.sample(well_known, k_wk)
-
-            while len(open_ports) < num_ports:
-                p = rng.randint(1025, 65534)
-                if p not in open_ports: open_ports.append(p)
-            open_ports.sort()
-
+                        vid, rlvl, vsvc, desc, rem = VULN_RULES[p]
+                        vulnerabilities.append({
+                            "id": vid, "port": p, "service": vsvc,
+                            "risk_level": rlvl.upper(), "description": desc, "remediation": rem
+                        })
+        elif is_sim:
+            logger.info(f"[Scan] Falling back to simulation for {ip}")
+            seed_val = int(hashlib.md5(ip.encode()).hexdigest(), 16)
+            rng = random.Random(seed_val)
+            all_possible_ports = list(SERVICES_MAP.keys())
+            num_to_pick = rng.randint(1, 4)
+            open_ports = sorted(rng.sample(all_possible_ports, num_to_pick))
             for p in open_ports:
-                if p in SERVICES_MAP:
-                    service_banners[str(p)] = rng.choice(SERVICES_MAP[p])
-                else:
-                    service_banners[str(p)] = f"unknown-service/{rng.randint(1,5)}.{rng.randint(0,9)}"
-                
-                # Rule-based vulnerabilities
+                service_banners[str(p)] = rng.choice(SERVICES_MAP.get(p, ["unknown service"]))
                 if p in VULN_RULES:
-                    vid, rlvl, svc, desc, rem = VULN_RULES[p]
+                    vid, rlvl, vsvc, desc, rem = VULN_RULES[p]
                     vulnerabilities.append({
-                        "id": vid, "port": p, "service": svc,
-                        "risk_level": rlvl, "description": desc, "remediation": rem
+                        "id": vid, "port": p, "service": vsvc,
+                        "risk_level": rlvl.upper(), "description": desc, "remediation": rem
                     })
-                elif p >= 1025:
-                    vulnerabilities.append({
-                        "id": f"UNKNOWN_PORT_{p}", "port": p, "service": "unknown",
-                        "risk_level": "Low", "description": f"Non-standard service on port {p}.",
-                        "remediation": f"Review service on port {p} and secure if necessary."
-                    })
-
-        # Final Database Sync & AI Analysis
+        
+        # 4. Persistence & Risk Analysis
         device = db.query(Device).filter(Device.ip == ip).first()
         if device:
             device.open_ports = ",".join(map(str, open_ports))
-            # Calculate overall risk
-            if any(v["risk_level"].upper() in ["CRITICAL", "HIGH"] for v in vulnerabilities):
-                device.risk_level = "CRITICAL"
-                device.risk_score = 95.0
-            else:
-                base_risk = calculate_risk(open_ports, device.protocol)
-                device.risk_level = base_risk["risk_level"]
-                device.risk_score = base_risk["risk_score"]
+            risk_assessment = calculate_risk(open_ports, device.protocol)
+            
+            # Severity merging logic
+            highest_sev = "SAFE"
+            if vulnerabilities:
+                sevs = [v["risk_level"].upper() for v in vulnerabilities]
+                for s in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+                    if s in sevs:
+                        highest_sev = s
+                        break
+            
+            final_risk = risk_assessment["risk_level"]
+            sev_priority = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "SAFE": 0}
+            if sev_priority.get(highest_sev, 0) > sev_priority.get(final_risk, 0):
+                final_risk = highest_sev
+            
+            device.risk_level = final_risk
+            device.risk_score = max(risk_assessment["risk_score"], 90.0 if final_risk == "CRITICAL" else 0.0)
 
+            # Sync vulns
             db.query(Vulnerability).filter(Vulnerability.device_id == device.id).delete()
             for v in vulnerabilities:
                 db.add(Vulnerability(
@@ -314,13 +253,17 @@ async def run_port_scan(ip: str, db_session: Session = None):
             db.commit()
             db.refresh(device)
 
+            # AI Analysis
             ai_results = analyze_single_device({
                 "ip": ip, "hostname": device.hostname, "vendor": device.vendor,
                 "protocol": device.protocol, "open_ports": device.open_ports,
                 "risk_level": device.risk_level, "vulnerabilities": vulnerabilities
             })
-            ai_summary = ai_results.get("dynamic_summary", "Hybrid Security Analysis complete.")
+            ai_summary = ai_results.get("dynamic_summary", "Security Analysis complete.")
 
+            # 5. FINAL BROADCAST (Single Source of Truth)
+            logger.info(f"[Broadcast] Sending final results for {ip}: Ports={len(open_ports)}, Vulns={len(vulnerabilities)}, Risk={final_risk}")
+            
             manager.broadcast({
                 "event": "scan_complete",
                 "type": "deep_port_scan",
@@ -331,9 +274,11 @@ async def run_port_scan(ip: str, db_session: Session = None):
                 "service_banners": service_banners,
                 "vulnerabilities": vulnerabilities,
                 "risk_level": device.risk_level,
+                "risk_score": device.risk_score,
                 "ai_summary": ai_summary,
+                "ai_results": ai_results,
                 "recommendations": [v["remediation"] for v in vulnerabilities],
-                "message": f"Hybrid Scan Complete for {ip}. Found {len(vulnerabilities)} findings."
+                "message": f"Scan complete: {len(open_ports)} ports, {len(vulnerabilities)} vulnerabilities detected."
             })
 
     except Exception as e:
