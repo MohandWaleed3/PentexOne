@@ -560,15 +560,21 @@ const app = {
 
         // Set titles based on view
         const titles = {
-            'dashboard': ['IoT Security Auditor', 'Monitor and secure your connected smart home environment'],
-            'devices': ['Discovered Devices', 'Detailed list of all scanned networks and devices'],
-            'rfid': ['Access Control', 'Scan and manage RFID/NFC cards and key fobs'],
-            'reports': ['Security Reports', 'Generate and export security audit results']
+            'dashboard':    ['IoT Security Auditor', 'Monitor and secure your connected smart home environment'],
+            'devices':      ['Discovered Devices', 'Detailed list of all scanned networks and devices'],
+            'rfid':         ['Access Control', 'Scan and manage RFID/NFC cards and key fobs'],
+            'reports':      ['Security Reports', 'Generate and export security audit results'],
+            'virtual-lab':  ['Virtual Lab', 'Simulated vulnerable IoT environment for hands-on penetration testing'],
         };
 
         if (titles[viewId]) {
             document.getElementById('pageTitle').textContent = titles[viewId][0];
             document.getElementById('pageSubtitle').textContent = titles[viewId][1];
+        }
+
+        // Initialize lab UI when switching to virtual-lab view
+        if (viewId === 'virtual-lab' && window.lab) {
+            lab.init();
         }
     },
 
