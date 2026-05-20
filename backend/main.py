@@ -27,7 +27,7 @@ if os.path.exists(dotenv_path):
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from routers import iot, access_control, wifi_bt, reports, ai
+from routers import iot, access_control, wifi_bt, reports, ai, virtual_lab, attack_scenarios
 from database import init_db, get_db, Setting
 from sqlalchemy.orm import Session
 from fastapi import Depends
@@ -70,6 +70,8 @@ app.include_router(access_control.router)
 app.include_router(wifi_bt.router)
 app.include_router(ai.router)
 app.include_router(reports.router)
+app.include_router(virtual_lab.router)
+app.include_router(attack_scenarios.router)
 
 # ===================== AUTH MIDDLEWARE =====================
 # Auth middleware removed

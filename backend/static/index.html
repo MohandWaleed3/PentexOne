@@ -39,6 +39,8 @@
                         Access Control (RFID)</a></li>
                 <li id="nav-reports"><a href="#" onclick="app.switchView('reports')"><i
                             class="fa-solid fa-file-pdf"></i> PDF Reports</a></li>
+                <li id="nav-virtual-lab"><a href="#" onclick="app.switchView('virtual-lab')"><i
+                            class="fa-solid fa-flask"></i> Virtual Lab</a></li>
 
             </ul>
         </nav>
@@ -490,10 +492,171 @@
 
 
 
+            <!-- ================= VIEW: VIRTUAL LAB ================= -->
+            <div id="view-virtual-lab" class="view-section hidden">
+
+                <!-- ── Lab Control Panel ── -->
+                <div class="lab-control-grid" style="margin-bottom:20px;">
+
+                    <!-- Wi-Fi Lab Card -->
+                    <div class="glass-panel lab-status-card">
+                        <div class="lab-card-top">
+                            <div class="lab-card-icon wifi-icon"><i class="fa-solid fa-network-wired"></i></div>
+                            <div class="lab-card-info">
+                                <h3>Wi-Fi Lab</h3>
+                                <p>7 containers · 3 subnets</p>
+                            </div>
+                            <div class="lab-status-dot stopped" id="wifiLabDot" title="stopped"></div>
+                        </div>
+                        <div class="lab-status-row">
+                            <span class="lab-status-label" id="wifiStatusLabel">STOPPED</span>
+                            <span class="lab-uptime-label">Uptime: <strong id="wifiUptime">—</strong></span>
+                        </div>
+                        <div class="lab-card-btns">
+                            <button class="btn btn-primary btn-sm" onclick="lab.startComponent('wifi')"><i class="fa-solid fa-play"></i> Start</button>
+                            <button class="btn btn-danger btn-sm"  onclick="lab.stopComponent('wifi')"><i class="fa-solid fa-stop"></i> Stop</button>
+                        </div>
+                    </div>
+
+                    <!-- BLE Lab Card -->
+                    <div class="glass-panel lab-status-card">
+                        <div class="lab-card-top">
+                            <div class="lab-card-icon ble-icon"><i class="fa-brands fa-bluetooth-b"></i></div>
+                            <div class="lab-card-info">
+                                <h3>BLE Lab</h3>
+                                <p>5 virtual peripherals</p>
+                            </div>
+                            <div class="lab-status-dot stopped" id="bleLabDot" title="stopped"></div>
+                        </div>
+                        <div class="lab-status-row">
+                            <span class="lab-status-label" id="bleStatusLabel">STOPPED</span>
+                            <span class="lab-uptime-label">Uptime: <strong id="bleUptime">—</strong></span>
+                        </div>
+                        <div class="lab-card-btns">
+                            <button class="btn btn-primary btn-sm" onclick="lab.startComponent('ble')"><i class="fa-solid fa-play"></i> Start</button>
+                            <button class="btn btn-danger btn-sm"  onclick="lab.stopComponent('ble')"><i class="fa-solid fa-stop"></i> Stop</button>
+                        </div>
+                    </div>
+
+                    <!-- Master Control Card -->
+                    <div class="glass-panel lab-status-card lab-master-card">
+                        <div class="lab-card-top">
+                            <div class="lab-card-icon master-icon"><i class="fa-solid fa-flask"></i></div>
+                            <div class="lab-card-info">
+                                <h3>Lab Control</h3>
+                                <p id="overallLabStatus"><i class="fa-solid fa-circle-xmark" style="color:#6b7280;"></i> STOPPED</p>
+                            </div>
+                        </div>
+                        <div class="lab-master-btns">
+                            <button class="btn btn-primary" onclick="lab.startAll()"><i class="fa-solid fa-play"></i> Start All</button>
+                            <button class="btn btn-danger"  onclick="lab.stopAll()"><i class="fa-solid fa-stop"></i> Stop All</button>
+                        </div>
+                        <div class="lab-inject-btns">
+                            <button class="btn btn-outline-blue btn-sm" onclick="lab.quickScan()" title="Inject Wi-Fi lab devices into device database">
+                                <i class="fa-solid fa-bolt"></i> Inject Wi-Fi Devices
+                            </button>
+                            <button class="btn btn-outline-blue btn-sm" onclick="lab.bleInject()" title="Inject BLE lab devices into device database">
+                                <i class="fa-brands fa-bluetooth-b"></i> Inject BLE Devices
+                            </button>
+                            <button class="btn btn-outline-red btn-sm" onclick="lab.resetLab()">
+                                <i class="fa-solid fa-trash"></i> Reset DB
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Network Architecture ── -->
+                <div class="glass-panel" style="margin-bottom:20px;">
+                    <div class="panel-header">
+                        <h3><i class="fa-solid fa-diagram-project" style="color:#60a5fa;"></i> Network Architecture</h3>
+                        <button class="btn btn-icon" onclick="lab.fetchArchitecture()"><i class="fa-solid fa-rotate-right"></i></button>
+                    </div>
+                    <div class="subnet-grid" id="subnetGrid">
+                        <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Loading architecture…</span>
+                    </div>
+                </div>
+
+                <!-- ── BLE Devices ── -->
+                <div class="glass-panel" style="margin-bottom:20px;">
+                    <div class="panel-header">
+                        <h3><i class="fa-brands fa-bluetooth-b" style="color:#60a5fa;"></i> BLE Peripherals</h3>
+                        <button class="btn btn-icon" onclick="lab.fetchBleDevices()"><i class="fa-solid fa-rotate-right"></i></button>
+                    </div>
+                    <div class="ble-device-grid" id="bleDeviceGrid">
+                        <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Loading BLE devices…</span>
+                    </div>
+                </div>
+
+                <!-- ── Attack Scenarios ── -->
+                <div class="glass-panel" style="margin-bottom:20px;">
+                    <div class="panel-header">
+                        <h3><i class="fa-solid fa-crosshairs" style="color:#ef4444;"></i> Attack Scenarios</h3>
+                        <div class="scenario-filter-bar">
+                            <button class="scenario-filter-btn active" data-filter="all"    onclick="lab.filterScenarios('all')">All</button>
+                            <button class="scenario-filter-btn"        data-filter="wifi"   onclick="lab.filterScenarios('wifi')">Wi-Fi</button>
+                            <button class="scenario-filter-btn"        data-filter="ble"    onclick="lab.filterScenarios('ble')">BLE</button>
+                            <button class="scenario-filter-btn badge-easy"   data-filter="easy"   onclick="lab.filterScenarios('easy')">Easy</button>
+                            <button class="scenario-filter-btn badge-medium" data-filter="medium" onclick="lab.filterScenarios('medium')">Medium</button>
+                            <button class="scenario-filter-btn badge-hard"   data-filter="hard"   onclick="lab.filterScenarios('hard')">Hard</button>
+                        </div>
+                    </div>
+                    <div id="scenarioList" class="scenario-list">
+                        <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Loading scenarios…</span>
+                    </div>
+
+                    <!-- Result Panel -->
+                    <div id="scenarioResultPanel" class="scenario-result-panel hidden" style="margin-top:16px;">
+                        <div class="panel-header">
+                            <h4><i class="fa-solid fa-terminal" style="color:#60a5fa;"></i> Attack Output</h4>
+                            <button class="btn btn-icon" onclick="document.getElementById('scenarioResultPanel').classList.add('hidden')">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                        <div id="scenarioResultContent"></div>
+                    </div>
+                </div>
+
+                <!-- ── Learning Path ── -->
+                <div class="glass-panel" style="margin-bottom:20px;">
+                    <div class="panel-header">
+                        <h3><i class="fa-solid fa-graduation-cap" style="color:#a78bfa;"></i> Learning Path &amp; Scores</h3>
+                        <button class="btn btn-icon" onclick="lab.fetchLearningPath()"><i class="fa-solid fa-rotate-right"></i></button>
+                    </div>
+                    <div id="learningPath">
+                        <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</span>
+                    </div>
+                </div>
+
+                <!-- ── Activity Log ── -->
+                <div class="glass-panel">
+                    <div class="panel-header">
+                        <h3><i class="fa-solid fa-list-ul" style="color:#34d399;"></i> Lab Activity Log</h3>
+                        <button class="btn btn-icon" onclick="lab.fetchActivity()"><i class="fa-solid fa-rotate-right"></i></button>
+                    </div>
+                    <div id="labActivityLog" class="activity-log-container">
+                        <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</span>
+                    </div>
+                </div>
+
+            </div>
+            <!-- ── End Virtual Lab View ── -->
+
         </main>
     </div>
 
+    <!-- ══ Tutorial Modal ══ -->
+    <div id="tutorialModal" class="modal-overlay hidden" onclick="if(event.target===this)lab.closeTutorial()">
+        <div class="modal-box glass-panel">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-book" style="color:#a78bfa;"></i> Tutorial</h3>
+                <button class="btn btn-icon" onclick="lab.closeTutorial()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="tutorialBody" class="modal-body"></div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
+    <script src="lab_ui.js"></script>
     <!-- Toast Notification Container -->
     <div id="toastContainer"
         style="position:fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 10px;">
