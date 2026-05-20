@@ -57,7 +57,7 @@ class RFIDCardOut(BaseModel):
     uid: str
     card_type: str
     sak: str
-    data: str
+    data: Optional[str] = ""
     encryption_type: str
     auth_mode: str
     replay_protection: str

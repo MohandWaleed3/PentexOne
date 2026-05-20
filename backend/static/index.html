@@ -39,8 +39,6 @@
                         Access Control (RFID)</a></li>
                 <li id="nav-reports"><a href="#" onclick="app.switchView('reports')"><i
                             class="fa-solid fa-file-pdf"></i> PDF Reports</a></li>
-                <li id="nav-settings"><a href="#" onclick="app.switchView('settings')"><i class="fa-solid fa-gear"></i>
-                        Settings</a></li>
 
             </ul>
         </nav>
@@ -53,7 +51,14 @@
                     <h1 id="pageTitle">IoT Security Auditor</h1>
                     <p class="subtitle" id="pageSubtitle">Monitor and secure your connected smart home environment</p>
                 </div>
-                <div class="actions">
+                <div class="actions" style="display: flex; align-items: center; gap: 15px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 13px; font-weight: bold; color: var(--text-color);">Simulation Mode</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="globalSimulationToggle" onchange="app.toggleSimulationMode()">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
                     <button class="btn btn-danger" onclick="app.clearData()">
                         <i class="fa-solid fa-trash"></i> Clear Data
                     </button>
@@ -228,17 +233,6 @@
                         </div>
                     </div>
                     
-                    <!-- AI Suggestions -->
-                    <div class="glass-panel suggestions-panel">
-                        <h3 class="section-header">
-                            <i class="fa-solid fa-lightbulb" style="color: var(--status-medium);"></i>AI Recommendations
-                        </h3>
-                        <div id="aiSuggestions" class="suggestions-list">
-                            <div class="loading-suggestions">
-                                <i class="fa-solid fa-spinner fa-spin"></i> Loading AI analysis...
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Main Layout: Table and Details inside Dashboard -->
@@ -302,37 +296,52 @@
                             </div>
 
                             <div class="action-buttons">
-                                <button class="btn btn-outline-blue w-half" onclick="app.deepScanDevice()">Deep Port
-                                    Scan</button>
-                                <button class="btn btn-outline-red w-half" onclick="app.testCreds()">Test Default
-                                    Creds</button>
+                                <button class="btn btn-outline-blue w-half" onclick="app.deepScanDevice()">Deep Port Scan</button>
+                                <button class="btn btn-outline-red w-half" onclick="app.testCreds()">Test Default Creds</button>
                             </div>
                             
-                            <!-- Deep Scan Results -->
-                            <div id="deepScanResults" class="hidden" style="margin-top: 15px;">
-                                <h4 style="font-size: 13px; margin-bottom: 10px;"><i class="fa-solid fa-shield-halved"></i> Deep Scan Results</h4>
-                                <div id="deepScanProgress" class="hidden" style="text-align: center; color: var(--accent-blue); margin-bottom: 10px;">
-                                    <i class="fa-solid fa-circle-notch fa-spin"></i> Scanning ports & assessing vulnerabilities...
+                            <!-- Dynamic Credential Testing Terminal -->
+                            <div id="credTestPanel" class="hidden" style="margin-top: 15px;">
+                                <div id="credTestConsole" class="terminal-emulator">
+                                    <div id="credTestLogs">
+                                        <div class="terminal-line">Pentex One Credential Simulator</div>
+                                    </div>
+                                    <span class="terminal-cursor"></span>
                                 </div>
-                                <div id="deepScanContent"></div>
+                                <div id="credTestSummary" class="hidden" style="padding: 16px; border-top: 1px solid var(--border-color); background: rgba(0,0,0,0.2);"></div>
                             </div>
                             
-                            <div class="action-buttons" style="margin-top: 8px;">
-                                <button class="btn btn-outline-purple full-width" onclick="app.analyzeDeviceAI()">
-                                    <i class="fa-solid fa-brain"></i> AI Analysis
-                                </button>
-                            </div>
-                            
-                            <!-- AI Device Analysis Results -->
-                            <div id="aiDeviceAnalysis" class="hidden" style="margin-bottom: 15px; padding: 12px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 3px solid var(--accent-purple);">
-                                <h4 style="font-size: 12px; margin-bottom: 8px; color: var(--accent-purple);">AI Analysis Results</h4>
-                                <div id="aiDeviceType" style="font-size: 11px; margin-bottom: 5px;"></div>
-                                <div id="aiPredictedVulns" style="font-size: 11px;"></div>
-                            </div>
+                            <!-- Dynamic Deep Scan Dashboard -->
+                            <div id="deepScanResults" class="hidden" style="margin-top: 15px;">
+                                <div class="scan-target-header">
+                                    <div class="target-info">
+                                        <h2 id="deepScanIp">--</h2>
+                                        <p id="deepScanVendor">--</p>
+                                    </div>
+                                    <div id="deepScanStatusBadge" class="badge">INITIALIZING</div>
+                                </div>
+                                
+                                <div id="deepScanProgress" class="hidden" style="margin-top: 15px;">
+                                    <div id="deepScanPhase" class="deep-scan-phase">Discovery Scan...</div>
+                                    <div class="deep-scan-progress">
+                                        <div id="deepScanProgressBar" class="deep-scan-bar"></div>
+                                    </div>
+                                </div>
 
-                            <h3 class="section-title">Vulnerabilities</h3>
-                            <div class="vuln-list" id="vulnList">
-                                <!-- vulnerabilities here -->
+                                <div id="deepScanContent" class="vuln-list" style="margin-top: 20px;">
+                                    <!-- Vulnerability Cards will be injected here -->
+                                </div>
+                                
+                                <button class="ai-analysis-btn full-width" onclick="app.analyzeDeviceAI()">
+                                    <i class="fa-solid fa-brain"></i> PROCESS AI ANALYSIS
+                                </button>
+
+                                <!-- AI Analysis Result Container -->
+                                <div id="aiDeviceAnalysis" class="hidden" style="margin-top: 15px; padding: 16px; background: rgba(139, 92, 246, 0.05); border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 12px;">
+                                    <div id="aiDeviceType" style="margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 8px;"></div>
+                                    <div id="aiDynamicSummary" style="font-size: 13px; color: var(--text-color); line-height: 1.6; margin-bottom: 12px; font-style: italic;"></div>
+                                    <div id="aiPredictedVulns"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -364,68 +373,55 @@
                     <div id="rfidLastScanInfo" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;"></div>
                 </div>
 
-                <!-- Attack Simulator -->
-                <div class="glass-panel" style="margin-bottom: 20px;">
-                    <h3 style="margin-bottom: 12px;">
-                        <i class="fa-solid fa-skull-crossbones" style="color: var(--status-risk);"></i> Attack Simulator
-                    </h3>
-                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 15px;">
-                        Simulate common RFID/NFC security attacks against the last scanned card. All attacks are passive simulations.
-                    </p>
-                    <div class="quick-action-buttons" style="margin-bottom: 15px;">
-                        <button class="btn btn-outline-orange" onclick="app.simulateAttack('Clone')">
-                            <i class="fa-solid fa-clone"></i> Clone
-                        </button>
-                        <button class="btn btn-outline-purple" onclick="app.simulateAttack('Replay')">
-                            <i class="fa-solid fa-rotate-left"></i> Replay
-                        </button>
-                        <button class="btn btn-outline-pink" onclick="app.simulateAttack('Impersonation')">
-                            <i class="fa-solid fa-user-secret"></i> Impersonation
-                        </button>
-                        <button class="btn btn-outline-blue" onclick="app.simulateAttack('Eavesdropping')">
-                            <i class="fa-solid fa-ear-listen"></i> Eavesdropping
-                        </button>
-                        <button class="btn btn-outline-red" onclick="app.simulateAttack('Tampering')">
-                            <i class="fa-solid fa-pen-to-square"></i> Tampering
-                        </button>
+                <!-- RFID/NFC Attack Simulator (Terminal-Style) -->
+                <div id="rfidAttackPanel" class="attack-simulator-panel glass-panel hidden" style="margin-bottom: 20px;">
+                    <div id="rfidNoAttackMsg" class="hidden" style="padding: 16px; text-align: center; color: var(--status-safe); font-weight: bold;">
+                        <i class="fa-solid fa-shield-halved"></i> No viable attacks detected. Card is secure.
                     </div>
+                    <nav class="attack-nav hidden" id="dynamicAttackNav">
+                        <!-- Attack buttons dynamically generated here -->
+                    </nav>
 
-                    <!-- Attack Console (terminal) -->
-                    <div id="attackConsole" class="hidden" style="background: #0a0e17; border: 1px solid rgba(59,130,246,0.3); border-radius: 10px; overflow: hidden;">
-                        <div style="background: rgba(59,130,246,0.1); padding: 8px 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid rgba(59,130,246,0.2);">
-                            <span style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444;"></span>
-                            <span style="width: 10px; height: 10px; border-radius: 50%; background: #f59e0b;"></span>
-                            <span style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e;"></span>
-                            <span style="margin-left: auto; font-size: 11px; color: var(--text-muted); font-family: monospace;" id="attackConsoleTitle">RFID Attack Console</span>
+                    <div id="attackConsole" class="terminal-emulator">
+                        <div id="attackConsoleLogs">
+                            <div class="terminal-line">Pentex One Attack Simulator v2.0</div>
+                            <div class="terminal-line">Ready for session...</div>
                         </div>
-                        <div id="attackConsoleLogs" style="padding: 14px; font-family: 'Courier New', monospace; font-size: 12px; color: #22c55e; max-height: 280px; overflow-y: auto; line-height: 1.7;"></div>
+                        <span class="terminal-cursor"></span>
                     </div>
 
-                    <!-- Attack Result Summary -->
-                    <div id="attackResultSummary" class="hidden" style="margin-top: 15px; padding: 16px; border-radius: 10px;"></div>
+                    <div id="attackResultSummary" class="hidden" style="padding: 16px; border-top: 1px solid var(--border-color); background: rgba(0,0,0,0.2);"></div>
+                    
+                    <div style="padding: 16px;">
+                        <button class="ai-analysis-btn full-width" onclick="app.analyzeRfidAI()">
+                            <i class="fa-solid fa-brain"></i> PROCESS AI REPORT
+                        </button>
+                    </div>
                 </div>
 
-                <!-- Scanned Cards Table -->
-                <div class="glass-panel" style="margin-bottom: 20px;">
+                <!-- Removed Scanned Cards Table -->
+
+                <!-- RFID Scan & Attack Reports -->
+                <div class="glass-panel">
                     <div class="panel-header">
-                        <h2><i class="fa-solid fa-id-card"></i> Scanned Cards</h2>
-                        <button class="btn btn-icon" onclick="app.fetchCards()"><i class="fa-solid fa-rotate-right"></i></button>
+                        <h2><i class="fa-solid fa-clipboard-list"></i> Scan & Attack Reports</h2>
+                        <button class="btn btn-icon" onclick="app.fetchRfidReports()"><i class="fa-solid fa-rotate-right"></i></button>
                     </div>
                     <div class="table-responsive">
-                        <table id="cardsTable">
+                        <table id="rfidReportsTable">
                             <thead>
                                 <tr>
+                                    <th>Timestamp</th>
                                     <th>UID</th>
                                     <th>Card Type</th>
-                                    <th>Encryption</th>
-                                    <th>Auth Mode</th>
-                                    <th>Replay Prot.</th>
-                                    <th>Integrity</th>
+                                    <th>Event</th>
+                                    <th>Result / Details</th>
+                                    <th>Remediation</th>
                                     <th>Risk</th>
-                                    <th>Vulnerabilities</th>
+                                    <th>Status</th>
                                 </tr>
                             </thead>
-                            <tbody id="cardsTableBody">
+                            <tbody id="rfidReportsTableBody">
                             </tbody>
                         </table>
                     </div>
@@ -491,23 +487,6 @@
                 </div>
             </div>
 
-            <!-- ================= VIEW: SETTINGS ================= -->
-            <div id="view-settings" class="view-section hidden">
-                <div class="glass-panel">
-                    <h2>System Settings</h2>
-                    <div style="margin-top: 20px;">
-                        <label style="display:flex; align-items:center; gap: 10px; margin-bottom: 15px;">
-                            <input type="checkbox" id="settingSimMode" onchange="app.saveSettings()">
-                            <span><strong>Enable Simulation Mode</strong> — Uses mock data for RFID/Zigbee if hardware
-                                is disconnected</span>
-                        </label>
-                        <div class="input-action" style="max-width: 300px;">
-                            <span style="align-self:center; margin-right: 10px;">Nmap Timeout (s):</span>
-                            <input type="number" id="settingTimeout" onchange="app.saveSettings()">
-                        </div>
-                    </div>
-                </div>
-            </div>
 
 
 

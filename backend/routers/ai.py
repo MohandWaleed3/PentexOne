@@ -9,8 +9,8 @@ from datetime import datetime
 
 from database import get_db, Device, Vulnerability
 from ai_engine import (
-    ai_engine, 
-    analyze_single_device, 
+    ai_engine,
+    analyze_single_device,
     analyze_network,
     get_dashboard_suggestions,
     get_remediation,
@@ -32,7 +32,7 @@ async def ai_analyze_device(device_id: int, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         return {"status": "error", "message": "Device not found"}
-    
+
     # Convert to dict for analysis
     device_dict = {
         "id": device.id,
@@ -54,9 +54,9 @@ async def ai_analyze_device(device_id: int, db: Session = Depends(get_db)):
             for v in device.vulnerabilities
         ]
     }
-    
+
     analysis = analyze_single_device(device_dict)
-    
+
     return {
         "status": "success",
         "device_id": device_id,
@@ -74,7 +74,7 @@ async def ai_analyze_network(db: Session = Depends(get_db)):
     Returns pattern analysis, anomalies, and network-wide recommendations.
     """
     devices = db.query(Device).all()
-    
+
     devices_dict = [
         {
             "id": d.id,
@@ -90,9 +90,9 @@ async def ai_analyze_network(db: Session = Depends(get_db)):
         }
         for d in devices
     ]
-    
+
     analysis = analyze_network(devices_dict)
-    
+
     return {
         "status": "success",
         "device_count": len(devices),
@@ -110,7 +110,7 @@ async def ai_get_suggestions(db: Session = Depends(get_db)):
     Includes recommended scans, alerts, and actions.
     """
     devices = db.query(Device).all()
-    
+
     devices_dict = [
         {
             "id": d.id,
@@ -121,15 +121,15 @@ async def ai_get_suggestions(db: Session = Depends(get_db)):
         }
         for d in devices
     ]
-    
+
     suggestions = get_dashboard_suggestions(devices_dict)
-    
+
     # Get network analysis for additional context
     network_analysis = analyze_network([
         {"protocol": d.protocol, "risk_level": d.risk_level}
         for d in devices
     ])
-    
+
     return {
         "status": "success",
         "suggestions": suggestions,
@@ -147,7 +147,7 @@ async def ai_get_remediation(vuln_type: str):
     Returns detailed remediation steps for a specific vulnerability type.
     """
     remediation = get_remediation(vuln_type)
-    
+
     return {
         "status": "success",
         "vulnerability": vuln_type,
@@ -178,12 +178,12 @@ async def ai_predict_risks(db: Session = Depends(get_db)):
     Predicts future risks based on current device state.
     """
     devices = db.query(Device).all()
-    
+
     # Get current state
     current_risk_count = sum(1 for d in devices if d.risk_level == "RISK")
     current_medium_count = sum(1 for d in devices if d.risk_level == "MEDIUM")
     current_safe_count = sum(1 for d in devices if d.risk_level == "SAFE")
-    
+
     # Analyze devices for potential future risks
     potential_new_risks = []
     for device in devices:
@@ -197,7 +197,7 @@ async def ai_predict_risks(db: Session = Depends(get_db)):
                 "open_ports": device.open_ports,
                 "risk_score": device.risk_score
             })
-            
+
             if analysis.get("predicted_vulnerabilities"):
                 potential_new_risks.append({
                     "device_id": device.id,
@@ -205,7 +205,7 @@ async def ai_predict_risks(db: Session = Depends(get_db)):
                     "current_risk": device.risk_level,
                     "predicted_vulnerabilities": analysis["predicted_vulnerabilities"][:3]
                 })
-    
+
     return {
         "status": "success",
         "current_state": {
@@ -215,8 +215,8 @@ async def ai_predict_risks(db: Session = Depends(get_db)):
             "total": len(devices)
         },
         "potential_escalations": potential_new_risks[:5],
-        "recommendation": "Monitor medium-risk devices for escalation" if potential_new_risks 
-                         else "No immediate risks predicted"
+        "recommendation": "Monitor medium-risk devices for escalation" if potential_new_risks
+        else "No immediate risks predicted"
     }
 
 
@@ -229,7 +229,7 @@ async def ai_classify_devices(db: Session = Depends(get_db)):
     Classifies all devices by type using AI pattern matching.
     """
     devices = db.query(Device).all()
-    
+
     classifications = []
     for device in devices:
         analysis = analyze_single_device({
@@ -238,7 +238,7 @@ async def ai_classify_devices(db: Session = Depends(get_db)):
             "protocol": device.protocol,
             "open_ports": device.open_ports
         })
-        
+
         classifications.append({
             "device_id": device.id,
             "ip": device.ip,
@@ -247,7 +247,7 @@ async def ai_classify_devices(db: Session = Depends(get_db)):
             "confidence": analysis["confidence"],
             "is_anomaly": analysis["is_anomaly"]
         })
-    
+
     # Group by device type
     type_groups = {}
     for c in classifications:
@@ -255,7 +255,7 @@ async def ai_classify_devices(db: Session = Depends(get_db)):
         if dtype not in type_groups:
             type_groups[dtype] = []
         type_groups[dtype].append(c)
-    
+
     return {
         "status": "success",
         "total_devices": len(devices),
@@ -273,23 +273,24 @@ async def ai_get_security_score(db: Session = Depends(get_db)):
     Returns AI-calculated security score for the network.
     """
     devices = db.query(Device).all()
-    
+
     if not devices:
         return {
             "status": "success",
             "score": {"score": 100, "grade": "A", "description": "No devices to analyze"}
         }
-    
+
     # Count risk levels
     risk_counts = {"SAFE": 0, "MEDIUM": 0, "RISK": 0, "UNKNOWN": 0}
     for d in devices:
         risk_counts[d.risk_level] = risk_counts.get(d.risk_level, 0) + 1
-    
+
     # Calculate score
     total = len(devices)
-    score = (risk_counts["SAFE"] * 100 + risk_counts["MEDIUM"] * 50 + risk_counts["RISK"] * 0) / total
+    score = (risk_counts["SAFE"] * 100 + risk_counts["MEDIUM"]
+             * 50 + risk_counts["RISK"] * 0) / total
     score = round(score, 1)
-    
+
     # Grade
     if score >= 80:
         grade, description = "A", "Excellent security posture"
@@ -301,7 +302,7 @@ async def ai_get_security_score(db: Session = Depends(get_db)):
         grade, description = "D", "Significant security issues"
     else:
         grade, description = "F", "Critical security state"
-    
+
     # Get improvement suggestions
     suggestions = []
     if risk_counts["RISK"] > 0:
@@ -314,7 +315,7 @@ async def ai_get_security_score(db: Session = Depends(get_db)):
             "impact": 10,
             "action": f"Address {risk_counts['MEDIUM']} medium-risk devices"
         })
-    
+
     return {
         "status": "success",
         "score": {

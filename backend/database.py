@@ -98,5 +98,7 @@ def init_db():
         db.add(Setting(key="simulation_mode", value="true"))
     if not db.query(Setting).filter(Setting.key == "nmap_timeout").first():
         db.add(Setting(key="nmap_timeout", value="60"))
+    if not db.query(Setting).filter(Setting.key == "security_assessment_enabled").first():
+        db.add(Setting(key="security_assessment_enabled", value="false"))
     db.commit()
     db.close()
