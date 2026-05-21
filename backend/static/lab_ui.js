@@ -4,8 +4,7 @@
  *   - Lab start/stop control
  *   - Network architecture display
  *   - Attack scenario execution
- *   - Tutorial & hint system
- *   - Scoring
+ *   - Tutorial
  *   - Activity log
  */
 
@@ -15,11 +14,9 @@ const lab = (function () {
   let _statusTimer  = null;
   let _activityTimer = null;
   let _activeScenarioId = null;
-  let _scenarioStartTime = null;
-  let _hintsUsed = 0;
   let _allScenarios = [];
-  let _currentFilter = 'all';
-  let _scoreTracker = {};   // scenarioId → {score, grade}
+  let _protocolFilter = 'all';
+  let _difficultyFilter = 'all';
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -61,6 +58,38 @@ const lab = (function () {
     if (l.includes('http'))  return '<i class="fa-solid fa-globe" style="color:#34d399;"></i>';
     if (l.includes('tcp'))   return '<i class="fa-solid fa-network-wired" style="color:#f59e0b;"></i>';
     return '<i class="fa-solid fa-wifi"></i>';
+  }
+
+  function confirmDialog({title, message, confirmText, cancelText, danger}) {
+    return new Promise(resolve => {
+      const overlay = el('confirmDialog');
+      const titleEl   = el('confirmDialogTitle');
+      const msgEl     = el('confirmDialogMessage');
+      const confirmBtn = el('confirmDialogConfirm');
+      const cancelBtn  = el('confirmDialogCancel');
+      const iconEl     = el('confirmDialogIcon');
+      if (!overlay) { resolve(window.confirm(message || title || 'Confirm?')); return; }
+
+      titleEl.textContent   = title || 'Are you sure?';
+      msgEl.textContent     = message || 'This action cannot be undone.';
+      confirmBtn.textContent = confirmText || 'Confirm';
+      cancelBtn.textContent  = cancelText  || 'Cancel';
+      confirmBtn.className   = 'btn btn-sm ' + (danger ? 'btn-danger' : 'btn-primary');
+      iconEl.className       = 'confirm-dialog-icon ' + (danger ? 'danger' : 'warn');
+
+      const cleanup = (result) => {
+        overlay.classList.add('hidden');
+        confirmBtn.onclick = null;
+        cancelBtn.onclick = null;
+        overlay.onclick = null;
+        resolve(result);
+      };
+      confirmBtn.onclick = () => cleanup(true);
+      cancelBtn.onclick  = () => cleanup(false);
+      overlay.onclick = (e) => { if (e.target === overlay) cleanup(false); };
+      overlay.classList.remove('hidden');
+      confirmBtn.focus();
+    });
   }
 
   function toast(msg, type) {
@@ -110,13 +139,23 @@ const lab = (function () {
     const r = await api('POST', '/lab/start');
     toast(r.wifi_lab?.message || r.message || 'Started', 'success');
     fetchStatus();
+    fetchStats();
   }
 
   async function stopAll() {
+    const ok = await confirmDialog({
+      title: 'Stop the lab?',
+      message: 'This will shut down all Wi-Fi containers and the BLE simulator. Running attacks will no longer reach their targets.',
+      confirmText: 'Stop Lab',
+      cancelText: 'Keep Running',
+      danger: true,
+    });
+    if (!ok) return;
     toast('Stopping lab…', 'info');
     await api('POST', '/lab/stop');
     toast('Lab stopped', 'success');
     fetchStatus();
+    fetchStats();
   }
 
   async function startComponent(c) {
@@ -124,6 +163,7 @@ const lab = (function () {
     const r = await api('POST', `/lab/start?component=${c}`);
     toast(r.message || 'Started', 'success');
     fetchStatus();
+    fetchStats();
   }
 
   async function stopComponent(c) {
@@ -131,29 +171,47 @@ const lab = (function () {
     await api('POST', `/lab/stop?component=${c}`);
     toast('Stopped', 'success');
     fetchStatus();
+    fetchStats();
   }
 
   // ─── Quick Inject ────────────────────────────────────────────────────────────
 
+  function refreshAppDashboard() {
+    if (!window.app) return;
+    if (app.fetchDevices)          app.fetchDevices();
+    if (app.fetchSummary)          app.fetchSummary();
+    if (app.fetchAISecurityScore)  app.fetchAISecurityScore();
+  }
+
   async function quickScan() {
-    toast('Injecting Wi-Fi lab devices into database…', 'info');
+    toast('Discovering Wi-Fi lab devices…', 'info');
     const r = await api('POST', '/lab/quick-scan');
     toast(r.message || 'Done', 'success');
-    if (window.app && app.fetchDevices) app.fetchDevices();
+    fetchStats();
+    refreshAppDashboard();
   }
 
   async function bleInject() {
-    toast('Injecting BLE lab devices into database…', 'info');
+    toast('Discovering BLE lab devices…', 'info');
     const r = await api('POST', '/lab/ble-inject');
     toast(r.message || 'Done', 'success');
-    if (window.app && app.fetchDevices) app.fetchDevices();
+    fetchStats();
+    refreshAppDashboard();
   }
 
   async function resetLab() {
-    if (!confirm('Remove all [LAB] devices from the database?')) return;
+    const ok = await confirmDialog({
+      title: 'Clear all lab devices?',
+      message: 'This removes every [LAB] device and its vulnerabilities from the database. You can re-add them with "Quick Discovery".',
+      confirmText: 'Clear Devices',
+      cancelText: 'Keep Devices',
+      danger: true,
+    });
+    if (!ok) return;
     const r = await api('POST', '/lab/reset');
     toast(r.message || 'Reset done', 'success');
-    if (window.app && app.fetchDevices) app.fetchDevices();
+    fetchStats();
+    refreshAppDashboard();
   }
 
   // ─── Network Architecture ────────────────────────────────────────────────────
@@ -193,7 +251,12 @@ const lab = (function () {
           </div>`;
       }).join('');
     } catch (_) {
-      grid.innerHTML = '<span class="text-muted">Could not load architecture — is the backend running?</span>';
+      grid.innerHTML = emptyState({
+        icon: 'fa-plug-circle-xmark', iconColor: '#ef4444',
+        title: 'Network architecture unavailable',
+        message: 'Could not reach the backend to load the subnet map.',
+        actionLabel: 'Retry', actionFn: 'lab.fetchArchitecture()',
+      });
     }
   }
 
@@ -230,19 +293,55 @@ const lab = (function () {
   // ─── Attack Scenarios ────────────────────────────────────────────────────────
 
   async function fetchScenarios() {
+    const list = el('scenarioList');
     try {
       const d = await api('GET', '/attacks/');
-      if (!d.ok) return;
+      if (!d.ok) {
+        if (list) list.innerHTML = emptyState({
+          icon: 'fa-circle-xmark', iconColor: '#ef4444',
+          title: 'Could not load attack scenarios',
+          message: d.detail || 'The backend returned an unexpected response.',
+          actionLabel: 'Retry', actionFn: 'lab.fetchScenarios()',
+        });
+        return;
+      }
       _allScenarios = d.scenarios || [];
       renderScenarioList();
-    } catch (_) {}
+    } catch (e) {
+      if (list) list.innerHTML = emptyState({
+        icon: 'fa-plug-circle-xmark', iconColor: '#ef4444',
+        title: 'Cannot reach the backend',
+        message: 'Make sure the PentexOne backend is running on port 8000.',
+        actionLabel: 'Retry', actionFn: 'lab.fetchScenarios()',
+      });
+    }
   }
 
-  function filterScenarios(f) {
-    _currentFilter = f;
-    document.querySelectorAll('.scenario-filter-btn').forEach(b => b.classList.remove('active'));
-    const btn = document.querySelector(`.scenario-filter-btn[data-filter="${f}"]`);
-    if (btn) btn.classList.add('active');
+  function emptyState({icon, iconColor, title, message, actionLabel, actionFn, secondaryLabel, secondaryFn}) {
+    return `
+      <div class="empty-state">
+        <div class="empty-state-icon" style="color:${iconColor||'#60a5fa'};">
+          <i class="fa-solid ${icon||'fa-circle-info'}"></i>
+        </div>
+        <div class="empty-state-title">${escHtml(title||'')}</div>
+        <div class="empty-state-message">${escHtml(message||'')}</div>
+        <div class="empty-state-actions">
+          ${actionLabel ? `<button class="btn btn-primary btn-sm" onclick="${actionFn}"><i class="fa-solid fa-arrow-right"></i> ${escHtml(actionLabel)}</button>` : ''}
+          ${secondaryLabel ? `<button class="btn btn-text btn-sm" onclick="${secondaryFn}">${escHtml(secondaryLabel)}</button>` : ''}
+        </div>
+      </div>`;
+  }
+
+  function filterScenarios(group, value) {
+    if (group === 'protocol')        _protocolFilter   = value;
+    else if (group === 'difficulty') _difficultyFilter = value;
+
+    const bar = document.querySelector(`.scenario-filter-bar[data-group="${group}"]`);
+    if (bar) {
+      bar.querySelectorAll('.scenario-filter-btn').forEach(b => b.classList.remove('active'));
+      const btn = bar.querySelector(`.scenario-filter-btn[data-filter="${value}"]`);
+      if (btn) btn.classList.add('active');
+    }
     renderScenarioList();
   }
 
@@ -250,18 +349,17 @@ const lab = (function () {
     const list = el('scenarioList');
     if (!list) return;
     let filtered = _allScenarios;
-    if (_currentFilter === 'wifi') filtered = filtered.filter(s => s.protocol && s.protocol.toLowerCase().includes('http') || s.id.startsWith('wifi'));
-    else if (_currentFilter === 'ble') filtered = filtered.filter(s => s.id.startsWith('ble'));
-    else if (['easy','medium','hard'].includes(_currentFilter)) filtered = filtered.filter(s => s.difficulty === _currentFilter);
 
-    const riskColor = { CRITICAL:'#ef4444', HIGH:'#f97316', MEDIUM:'#f59e0b', SAFE:'#22c55e' };
-    const savedScores = _scoreTracker;
+    if (_protocolFilter === 'wifi') {
+      filtered = filtered.filter(s => s.id.startsWith('wifi'));
+    } else if (_protocolFilter === 'ble') {
+      filtered = filtered.filter(s => s.id.startsWith('ble'));
+    }
+    if (['easy','medium','hard'].includes(_difficultyFilter)) {
+      filtered = filtered.filter(s => s.difficulty === _difficultyFilter);
+    }
 
     list.innerHTML = filtered.map(s => {
-      const scoreInfo = savedScores[s.id];
-      const scoreBadge = scoreInfo
-        ? `<span class="score-badge grade-${scoreInfo.grade}">${scoreInfo.grade} (${scoreInfo.score}pts)</span>`
-        : '';
       return `
         <div class="scenario-card" id="scenario-card-${s.id}">
           <div class="scenario-card-left">
@@ -270,7 +368,6 @@ const lab = (function () {
               ${difficultyBadge(s.difficulty)}
               <span class="scenario-protocol">${protocolIcon(s.protocol)} ${s.protocol}</span>
               <span class="scenario-target"><i class="fa-solid fa-crosshairs"></i> ${s.target_device || s.target_address || ''}</span>
-              ${scoreBadge}
             </div>
             <div class="scenario-owasp">${s.owasp_category || ''}</div>
           </div>
@@ -279,17 +376,21 @@ const lab = (function () {
               <i class="fa-solid fa-book"></i>
             </button>
             <button class="btn btn-primary btn-sm" onclick="lab.runScenario('${s.id}')">
-              <i class="fa-solid fa-play"></i> Run
+              <i class="fa-solid fa-crosshairs"></i> Exploit
             </button>
           </div>
         </div>`;
-    }).join('') || '<p class="text-muted" style="padding:20px;">No scenarios match this filter.</p>';
+    }).join('') || emptyState({
+      icon: 'fa-filter-circle-xmark', iconColor: '#a78bfa',
+      title: 'No scenarios match these filters',
+      message: 'Try a different protocol or difficulty combination.',
+      actionLabel: 'Reset Filters',
+      actionFn: `lab.filterScenarios('protocol','all');lab.filterScenarios('difficulty','all')`,
+    });
   }
 
   async function runScenario(id) {
     _activeScenarioId = id;
-    _scenarioStartTime = Date.now();
-    _hintsUsed = 0;
 
     const panel = el('scenarioResultPanel');
     const resultEl = el('scenarioResultContent');
@@ -301,36 +402,29 @@ const lab = (function () {
     resultEl.innerHTML = `
       <div class="attack-running">
         <i class="fa-solid fa-circle-notch fa-spin" style="color:#60a5fa;"></i>
-        Running <strong>${id}</strong>… sending real requests to lab containers
+        Launching <strong>${id}</strong>… establishing connection to target
       </div>`;
 
     try {
       const r = await api('POST', `/attacks/${id}/run`);
-      renderScenarioResult(r);
+      await renderScenarioResultLive(r);
+      fetchStats();
     } catch (e) {
       resultEl.innerHTML = `<div class="attack-error"><i class="fa-solid fa-circle-xmark"></i> Error: ${e.message}</div>`;
     }
   }
 
-  function renderScenarioResult(r) {
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  async function renderScenarioResultLive(r) {
     const resultEl = el('scenarioResultContent');
     if (!resultEl) return;
 
     const successColor = r.success ? '#22c55e' : '#ef4444';
     const successIcon  = r.success ? 'fa-circle-check' : 'fa-circle-xmark';
+    const evidence = r.evidence || [];
 
-    const evidenceHtml = (r.evidence || []).map(ev => `
-      <div class="evidence-step ${ev.success ? 'step-success' : 'step-fail'}">
-        <div class="evidence-step-num">Step ${ev.step}</div>
-        <div class="evidence-step-body">
-          <div class="evidence-action"><i class="fa-solid fa-terminal"></i> ${escHtml(ev.action)}</div>
-          <div class="evidence-result">${escHtml(ev.result)}</div>
-        </div>
-        <i class="fa-solid ${ev.success ? 'fa-check' : 'fa-xmark'} evidence-step-icon" style="color:${ev.success?'#22c55e':'#ef4444'};"></i>
-      </div>`
-    ).join('');
-
-    const elapsed = _scenarioStartTime ? ((Date.now() - _scenarioStartTime) / 1000).toFixed(1) : '?';
+    const containerDown = !r.success && /unreachable|start the wi-fi lab|start the wifi lab|connection failed/i.test(r.summary || '');
 
     resultEl.innerHTML = `
       <div class="attack-result-header" style="border-left:3px solid ${successColor}">
@@ -339,22 +433,80 @@ const lab = (function () {
           <div class="attack-result-title">${escHtml(r.title || r.scenario_id)}</div>
           <div class="attack-result-summary">${escHtml(r.summary || '')}</div>
         </div>
-        <span class="attack-elapsed">${elapsed}s</span>
+        <span class="attack-elapsed" id="liveElapsed">0.0s</span>
       </div>
-      <div class="evidence-list">${evidenceHtml}</div>
-      <div class="scenario-actions-row">
-        <button class="btn btn-outline-blue btn-sm" onclick="lab.showHintPanel('${r.scenario_id}')">
-          <i class="fa-solid fa-lightbulb"></i> Get Hint
-        </button>
-        <button class="btn btn-outline-green btn-sm" onclick="lab.submitScore('${r.scenario_id}', ${elapsed})">
-          <i class="fa-solid fa-star"></i> Submit Score
-        </button>
-        <button class="btn btn-text btn-sm" onclick="lab.openTutorial('${r.scenario_id}')">
-          <i class="fa-solid fa-book"></i> Read Tutorial
-        </button>
-      </div>
-      <div id="hintPanel-${r.scenario_id}" class="hint-panel hidden"></div>
-      <div id="scorePanel-${r.scenario_id}" class="score-panel hidden"></div>`;
+      <div class="evidence-list" id="liveEvidenceList"></div>
+      <div id="liveActionsRow"></div>`;
+
+    const liveList = el('liveEvidenceList');
+    const elapsedEl = el('liveElapsed');
+    const startTime = Date.now();
+
+    for (let i = 0; i < evidence.length; i++) {
+      const ev = evidence[i];
+      const pendingId = `pending-step-${i}`;
+      liveList.insertAdjacentHTML('beforeend', `
+        <div class="evidence-step step-pending" id="${pendingId}">
+          <div class="evidence-step-num">Step ${ev.step}</div>
+          <div class="evidence-step-body">
+            <div class="evidence-action"><i class="fa-solid fa-terminal"></i> ${escHtml(ev.action)}</div>
+            <div class="evidence-result"><i class="fa-solid fa-circle-notch fa-spin"></i> executing…</div>
+          </div>
+          <i class="fa-solid fa-spinner fa-pulse evidence-step-icon" style="color:#60a5fa;"></i>
+        </div>`);
+      const node = el(pendingId);
+      if (node) node.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      await sleep(450 + Math.random() * 300);
+      if (elapsedEl) elapsedEl.textContent = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+
+      if (node) {
+        node.classList.remove('step-pending');
+        node.classList.add(ev.success ? 'step-success' : 'step-fail');
+        const resEl = node.querySelector('.evidence-result');
+        const iconEl = node.querySelector('.evidence-step-icon');
+        if (resEl)  resEl.innerHTML = escHtml(ev.result);
+        if (iconEl) {
+          iconEl.className = `fa-solid ${ev.success ? 'fa-check' : 'fa-xmark'} evidence-step-icon`;
+          iconEl.style.color = ev.success ? '#22c55e' : '#ef4444';
+        }
+      }
+      await sleep(180);
+    }
+
+    if (elapsedEl) elapsedEl.textContent = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+
+    const actionsRow = el('liveActionsRow');
+    if (actionsRow) {
+      actionsRow.innerHTML = (containerDown ? `
+        <div class="container-down-banner">
+          <div class="container-down-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+          <div class="container-down-body">
+            <div class="container-down-title">Wi-Fi Lab Containers Are Not Running</div>
+            <div class="container-down-desc">
+              This exploit sends real HTTP requests to a Docker container — but no container is responding on the expected port.
+              Start the Wi-Fi lab, then click <strong>Re-run Exploit</strong>.
+            </div>
+            <div class="container-down-steps">
+              <div class="container-down-step"><span class="container-down-step-num">1</span><span>Open a terminal in the project root</span></div>
+              <div class="container-down-step"><span class="container-down-step-num">2</span><code>cd virtual_lab &amp;&amp; ./start_lab.sh</code></div>
+              <div class="container-down-step"><span class="container-down-step-num">3</span><span>Wait ~15 seconds, then re-run</span></div>
+            </div>
+            <div class="container-down-actions">
+              <button class="btn btn-primary btn-sm" onclick="lab.startComponent('wifi')"><i class="fa-solid fa-play"></i> Start Wi-Fi Lab Now</button>
+              <button class="btn btn-outline-blue btn-sm" onclick="lab.runScenario('${r.scenario_id}')"><i class="fa-solid fa-rotate-right"></i> Retry Exploit</button>
+            </div>
+          </div>
+        </div>` : '') + `
+        <div class="scenario-actions-row">
+          <button class="btn btn-primary btn-sm" onclick="lab.runScenario('${r.scenario_id}')">
+            <i class="fa-solid fa-rotate-right"></i> Re-run Exploit
+          </button>
+          <button class="btn btn-text btn-sm" onclick="lab.openTutorial('${r.scenario_id}')">
+            <i class="fa-solid fa-book"></i> Read Tutorial
+          </button>
+        </div>`;
+    }
   }
 
   // ─── Tutorial ────────────────────────────────────────────────────────────────
@@ -401,13 +553,7 @@ const lab = (function () {
         <ul>${(t.learning_objectives||[]).map(x=>`<li>${escHtml(x)}</li>`).join('')}</ul>
 
         <h4><i class="fa-solid fa-shield-halved" style="color:#22c55e;"></i> Remediation</h4>
-        <pre class="remediation-pre">${escHtml(t.remediation_deep_dive||'')}</pre>
-
-        <div class="tutorial-run-row">
-          <button class="btn btn-primary" onclick="lab.closeTutorial(); lab.runScenario('${id}')">
-            <i class="fa-solid fa-play"></i> Run Attack Now
-          </button>
-        </div>`;
+        <pre class="remediation-pre">${escHtml(t.remediation_deep_dive||'')}</pre>`;
     } catch (e) {
       body.innerHTML = `Error loading tutorial: ${e.message}`;
     }
@@ -418,76 +564,61 @@ const lab = (function () {
     if (modal) modal.classList.add('hidden');
   }
 
-  // ─── Hints ───────────────────────────────────────────────────────────────────
+  // ─── Stats Bar ───────────────────────────────────────────────────────────────
 
-  async function showHintPanel(id) {
-    const panel = el(`hintPanel-${id}`);
-    if (!panel) return;
-    panel.classList.remove('hidden');
-
-    const meta = await api('GET', `/attacks/${id}/hints`);
-    const available = meta.hint_count || 3;
-    const used = _hintsUsed;
-
-    panel.innerHTML = `
-      <div class="hint-panel-header">
-        <i class="fa-solid fa-lightbulb" style="color:#f59e0b;"></i>
-        <strong>Hints</strong>
-        <span class="text-muted">(${used} used · -10 pts each)</span>
-      </div>
-      <div class="hint-buttons">
-        ${Array.from({length: available}, (_, i) => i + 1).map(level => `
-          <button class="btn btn-outline-orange btn-sm ${used >= level ? 'used' : ''}"
-                  onclick="lab.revealHint('${id}', ${level})"
-                  ${used >= level ? 'disabled' : ''}>
-            Hint ${level}
-          </button>`).join('')}
-      </div>
-      <div id="hintText-${id}" class="hint-text"></div>`;
+  function formatRelativeTime(iso) {
+    if (!iso) return '—';
+    const then = new Date(iso.replace(' ', 'T') + (iso.endsWith('Z') ? '' : 'Z'));
+    const diff = Math.floor((Date.now() - then.getTime()) / 1000);
+    if (isNaN(diff)) return '—';
+    if (diff < 5)    return 'just now';
+    if (diff < 60)   return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+    return `${Math.floor(diff/86400)}d ago`;
   }
 
-  async function revealHint(id, level) {
-    const d = await api('GET', `/attacks/${id}/hints/${level}`);
-    const textEl = el(`hintText-${id}`);
-    if (textEl) {
-      textEl.innerHTML = `<div class="hint-revealed"><i class="fa-solid fa-lightbulb" style="color:#f59e0b;"></i> <strong>Hint ${level}:</strong> ${escHtml(d.hint || '')}</div>`;
-    }
-    if (level > _hintsUsed) _hintsUsed = level;
+  let _lastActivityTs = null;
+
+  async function fetchStats() {
+    try {
+      const [devicesResp, statsResp, activityResp] = await Promise.all([
+        api('GET', '/iot/devices').catch(() => null),
+        api('GET', '/lab/activity/stats').catch(() => null),
+        api('GET', '/lab/activity?limit=1').catch(() => null),
+      ]);
+
+      const devices = Array.isArray(devicesResp) ? devicesResp
+                    : (devicesResp && devicesResp.devices) || [];
+
+      const critical = devices.reduce((acc, d) => {
+        const vulns = d.vulnerabilities || [];
+        return acc + vulns.filter(v => (v.severity || '').toUpperCase() === 'CRITICAL').length;
+      }, 0);
+
+      const byEvent = (statsResp && statsResp.stats && statsResp.stats.by_event) || {};
+      const attackCount = byEvent.ATTACK_SIMULATED || 0;
+
+      const lastTs = activityResp && activityResp.entries && activityResp.entries[0]
+                     ? activityResp.entries[0].timestamp : null;
+      _lastActivityTs = lastTs;
+
+      const dEl = el('statDeviceCount');
+      const cEl = el('statCriticalCount');
+      const eEl = el('statExploitCount');
+      const lEl = el('statLastActivity');
+      if (dEl) dEl.textContent = devices.length;
+      if (cEl) cEl.textContent = critical;
+      if (eEl) eEl.textContent = attackCount;
+      if (lEl) lEl.textContent = formatRelativeTime(lastTs);
+    } catch (_) {}
   }
 
-  // ─── Score Submission ────────────────────────────────────────────────────────
-
-  async function submitScore(id, elapsedStr) {
-    const elapsed = parseFloat(elapsedStr) || 60;
-    const panel = el(`scorePanel-${id}`);
-    if (!panel) return;
-    panel.classList.remove('hidden');
-
-    const d = await api('POST', `/attacks/${id}/score`, {
-      elapsed_seconds: elapsed,
-      hints_used: _hintsUsed,
-      success: true,
-    });
-
-    const gradeColor = { A:'#22c55e', B:'#84cc16', C:'#f59e0b', D:'#f97316', F:'#ef4444' };
-    const g = d.grade || 'F';
-    const color = gradeColor[g] || '#9ca3af';
-
-    panel.innerHTML = `
-      <div class="score-result" style="border-color:${color}44;background:${color}11;">
-        <div class="score-grade-big" style="color:${color};">${g}</div>
-        <div class="score-pts" style="color:${color};">${d.score} pts</div>
-        <div class="score-msg">${escHtml(d.message || '')}</div>
-        <div class="score-breakdown">
-          <span>Base: ${d.base_score}</span>
-          <span>×${d.difficulty_multiplier}</span>
-          <span style="color:#ef4444;">−${d.hint_penalty} hints</span>
-          <span style="color:#ef4444;">−${d.time_penalty} time</span>
-        </div>
-      </div>`;
-
-    _scoreTracker[id] = { score: d.score, grade: g };
-    renderScenarioList();
+  // Update the "Last Activity" label every second using the cached timestamp,
+  // so the user sees "1s ago → 2s ago → …" without re-hitting the API.
+  function tickRelativeTimes() {
+    const lEl = el('statLastActivity');
+    if (lEl && _lastActivityTs) lEl.textContent = formatRelativeTime(_lastActivityTs);
   }
 
   // ─── Activity Log ────────────────────────────────────────────────────────────
@@ -512,7 +643,13 @@ const lab = (function () {
       };
 
       if (!d.entries.length) {
-        logEl.innerHTML = '<p class="text-muted" style="padding:16px;">No activity yet — start the lab or run a scan.</p>';
+        logEl.innerHTML = emptyState({
+          icon: 'fa-clock-rotate-left', iconColor: '#a78bfa',
+          title: 'No activity yet',
+          message: 'Start the lab, run a discovery, or execute an exploit to see events here.',
+          actionLabel: 'Quick Discovery (Wi-Fi)', actionFn: 'lab.quickScan()',
+          secondaryLabel: 'Start Lab', secondaryFn: 'lab.startAll()',
+        });
         return;
       }
 
@@ -538,43 +675,70 @@ const lab = (function () {
     const el2 = el('learningPath');
     if (!el2) return;
     try {
-      const d = await api('GET', '/attacks/learning/path');
+      // Use the full /attacks/ endpoint so we get target_device, vulnerability_class, etc.
+      const d = await api('GET', '/attacks/');
       if (!d.ok) return;
+
+      const scenarios = d.scenarios || [];
       const sections = [
-        { label: 'Easy', key: 'easy', color: '#22c55e', icon: 'fa-seedling' },
+        { label: 'Easy',   key: 'easy',   color: '#22c55e', icon: 'fa-seedling' },
         { label: 'Medium', key: 'medium', color: '#f59e0b', icon: 'fa-fire-flame-simple' },
-        { label: 'Hard', key: 'hard', color: '#ef4444', icon: 'fa-skull' },
+        { label: 'Hard',   key: 'hard',   color: '#ef4444', icon: 'fa-skull' },
       ];
+
+      const protoIcon = (s) => {
+        if (s.id.startsWith('ble')) return '<i class="fa-brands fa-bluetooth-b" style="color:#60a5fa;"></i>';
+        return '<i class="fa-solid fa-wifi" style="color:#34d399;"></i>';
+      };
+
+      const prettyVulnClass = (v) => (v || '').replace(/_/g, ' ').toLowerCase()
+        .replace(/\b\w/g, c => c.toUpperCase());
+
       el2.innerHTML = `
-        <div class="learning-path-total">
-          Total Max Score: <strong style="color:#a78bfa;">${d.total_max_score} pts</strong>
-        </div>
         <div class="learning-path-tracks">
-          ${sections.map(s => `
-            <div class="learning-track">
-              <div class="learning-track-header" style="color:${s.color};">
-                <i class="fa-solid ${s.icon}"></i> ${s.label}
-              </div>
-              <div class="learning-track-ids">
-                ${(d[s.key]||[]).map(id => {
-                  const score = _scoreTracker[id];
-                  const done = score ? `✓ ${score.grade}` : '';
-                  return `<span class="learning-id ${done?'done':''}" onclick="lab.runScenario('${id}')" title="${id}">${id} ${done}</span>`;
-                }).join('')}
-              </div>
-            </div>`
-          ).join('')}
+          ${sections.map(s => {
+            const items = scenarios.filter(x => x.difficulty === s.key);
+            return `
+              <div class="learning-track">
+                <div class="learning-track-header" style="color:${s.color};">
+                  <i class="fa-solid ${s.icon}"></i> ${s.label}
+                  <span class="learning-track-count">${items.length}</span>
+                </div>
+                <div class="catalog-card-grid">
+                  ${items.map(sc => `
+                    <div class="catalog-card" onclick="lab.runScenario('${sc.id}')" title="Click to launch this exploit">
+                      <div class="catalog-card-top">
+                        <span class="catalog-card-id">${sc.id}</span>
+                        ${protoIcon(sc)}
+                      </div>
+                      <div class="catalog-card-target">
+                        <i class="fa-solid fa-crosshairs"></i> ${escHtml(sc.target_device || sc.target_address || '—')}
+                      </div>
+                      <div class="catalog-card-attack">
+                        ${escHtml(prettyVulnClass(sc.vulnerability_class))}
+                      </div>
+                      <div class="catalog-card-launch">
+                        <i class="fa-solid fa-play"></i> Launch
+                      </div>
+                    </div>`
+                  ).join('') || '<div class="catalog-empty">No scenarios at this level</div>'}
+                </div>
+              </div>`;
+          }).join('')}
         </div>`;
     } catch (_) {}
   }
 
   // ─── Auto-refresh ────────────────────────────────────────────────────────────
 
+  let _tickTimer = null;
   function startAutoRefresh() {
     if (_statusTimer)   clearInterval(_statusTimer);
     if (_activityTimer) clearInterval(_activityTimer);
+    if (_tickTimer)     clearInterval(_tickTimer);
     _statusTimer   = setInterval(fetchStatus,   10000);
-    _activityTimer = setInterval(fetchActivity, 15000);
+    _activityTimer = setInterval(() => { fetchActivity(); fetchStats(); }, 5000);
+    _tickTimer     = setInterval(tickRelativeTimes, 1000);
   }
 
   function stopAutoRefresh() {
@@ -590,6 +754,7 @@ const lab = (function () {
     fetchBleDevices();
     fetchScenarios();
     fetchActivity();
+    fetchStats();
     fetchLearningPath();
     startAutoRefresh();
   }
@@ -608,10 +773,8 @@ const lab = (function () {
     init,
     startAll, stopAll, startComponent, stopComponent,
     quickScan, bleInject, resetLab,
-    fetchStatus, fetchArchitecture, fetchBleDevices, fetchActivity, fetchLearningPath,
+    fetchStatus, fetchArchitecture, fetchBleDevices, fetchActivity, fetchStats, fetchLearningPath,
     filterScenarios, runScenario,
     openTutorial, closeTutorial,
-    showHintPanel, revealHint,
-    submitScore,
   };
 })();

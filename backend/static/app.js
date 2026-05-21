@@ -114,6 +114,7 @@ const app = {
              this.fetchDevices();
              this.fetchSummary();
              this.fetchCards(); // Also refresh RFID cards
+             this.fetchAISecurityScore(); // Keep AI score in sync with device state
          }, interval);
 
          // Refresh hardware status every 2 seconds to quickly detect plugged dongles

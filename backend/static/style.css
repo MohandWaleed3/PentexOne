@@ -1977,6 +1977,73 @@ body.lightweight-mode .signal-bar {
     font-family: monospace;
 }
 
+/* ── Lab Stats Bar ── */
+.lab-stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.lab-stat {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    transition: all 0.2s;
+}
+.lab-stat:hover {
+    background: rgba(255, 255, 255, 0.05);
+    transform: translateY(-1px);
+}
+.lab-stat > i {
+    font-size: 22px;
+    flex-shrink: 0;
+    opacity: 0.9;
+}
+.lab-stat-body { flex: 1; min-width: 0; }
+.lab-stat-num {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--text-color, #e2e8f0);
+    font-family: 'Inter', sans-serif;
+}
+.lab-stat-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+/* ── Filter Rows (Protocol + Difficulty) ── */
+.scenario-filter-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 16px 14px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 12px;
+}
+.filter-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.filter-row-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    width: 70px;
+    flex-shrink: 0;
+}
+
 /* ── Scenario List ── */
 .scenario-filter-bar {
     display: flex;
@@ -2106,6 +2173,23 @@ body.lightweight-mode .signal-bar {
 }
 .step-success { background: rgba(34,197,94,0.05);  border-left: 2px solid #22c55e44; }
 .step-fail    { background: rgba(239,68,68,0.05);   border-left: 2px solid #ef444444; }
+.step-pending {
+    background: rgba(96, 165, 250, 0.06);
+    border-left: 2px solid #60a5fa66;
+    animation: stepPulse 1.2s ease-in-out infinite;
+}
+.evidence-step {
+    transition: background 0.25s, border-color 0.25s;
+    animation: stepSlideIn 0.25s ease-out;
+}
+@keyframes stepSlideIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes stepPulse {
+    0%, 100% { background: rgba(96, 165, 250, 0.06); }
+    50%      { background: rgba(96, 165, 250, 0.14); }
+}
 
 .evidence-step-num  { font-size: 10px; color: var(--text-muted); white-space: nowrap; width: 36px; flex-shrink: 0; padding-top: 1px; }
 .evidence-step-body { flex: 1; min-width: 0; }
@@ -2118,6 +2202,192 @@ body.lightweight-mode .signal-bar {
     gap: 8px;
     padding: 12px 16px;
     border-top: 1px solid var(--border-color);
+    flex-wrap: wrap;
+}
+
+/* ── Empty / Error State ── */
+.empty-state {
+    padding: 40px 24px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+.empty-state-icon {
+    font-size: 42px;
+    opacity: 0.85;
+    margin-bottom: 6px;
+}
+.empty-state-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-color, #e2e8f0);
+}
+.empty-state-message {
+    font-size: 13px;
+    color: var(--text-muted, #94a3b8);
+    max-width: 420px;
+    line-height: 1.55;
+}
+.empty-state-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+/* ── Confirm Dialog ── */
+.confirm-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: fadeIn 0.15s ease-out;
+}
+.confirm-dialog-overlay.hidden { display: none; }
+.confirm-dialog {
+    background: linear-gradient(180deg, #1a1f2e, #131722);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+    border-radius: 14px;
+    padding: 28px;
+    max-width: 460px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    animation: scaleIn 0.18s ease-out;
+}
+.confirm-dialog-icon {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+.confirm-dialog-icon.warn {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+}
+.confirm-dialog-icon.danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+.confirm-dialog-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin-bottom: 8px;
+}
+.confirm-dialog-message {
+    font-size: 13.5px;
+    color: var(--text-muted, #94a3b8);
+    line-height: 1.55;
+    margin-bottom: 22px;
+}
+.confirm-dialog-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+@keyframes scaleIn {
+    from { opacity: 0; transform: scale(0.92); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Container Down Warning Banner ── */
+.container-down-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin: 14px 16px;
+    padding: 16px 18px;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(239, 68, 68, 0.08));
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    border-left: 4px solid #f59e0b;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.08);
+}
+.container-down-icon {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(245, 158, 11, 0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #f59e0b;
+    font-size: 20px;
+}
+.container-down-body { flex: 1; min-width: 0; }
+.container-down-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #fbbf24;
+    margin-bottom: 6px;
+}
+.container-down-desc {
+    font-size: 13px;
+    color: var(--text-color, #e2e8f0);
+    line-height: 1.55;
+    margin-bottom: 14px;
+}
+.container-down-desc strong { color: #fbbf24; }
+.container-down-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.container-down-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12.5px;
+    color: var(--text-color, #e2e8f0);
+}
+.container-down-step code {
+    background: rgba(0, 0, 0, 0.4);
+    padding: 4px 9px;
+    border-radius: 5px;
+    color: #60a5fa;
+    font-size: 12px;
+    font-family: 'SF Mono', Menlo, monospace;
+    border: 1px solid rgba(96, 165, 250, 0.2);
+}
+.container-down-step-num {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #f59e0b;
+    color: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+}
+.container-down-actions {
+    display: flex;
+    gap: 8px;
     flex-wrap: wrap;
 }
 
@@ -2194,24 +2464,108 @@ body.lightweight-mode .signal-bar {
 .activity-proto      { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: rgba(255,255,255,0.06); color: var(--text-muted); }
 .activity-time       { margin-left: auto; color: var(--text-muted); font-family: monospace; white-space: nowrap; font-size: 10px; }
 
-/* ── Learning Path ── */
-.learning-path-total { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
-.learning-path-tracks { display: flex; gap: 12px; flex-wrap: wrap; }
-.learning-track { flex: 1; min-width: 180px; }
-.learning-track-header { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-.learning-track-ids { display: flex; flex-wrap: wrap; gap: 6px; }
-.learning-id {
-    font-size: 11px;
-    font-family: monospace;
-    padding: 3px 8px;
-    border-radius: 5px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid var(--border-color);
-    cursor: pointer;
-    transition: all 0.2s;
+/* ── Attack Catalog ── */
+.learning-path-tracks { display: flex; flex-direction: column; gap: 22px; }
+.learning-track {}
+.learning-track-header {
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
 }
-.learning-id:hover { background: rgba(59,130,246,0.12); border-color: #3b82f6; color: #60a5fa; }
-.learning-id.done  { background: rgba(34,197,94,0.1);  border-color: rgba(34,197,94,0.3); color: #22c55e; }
+.learning-track-count {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.05);
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.catalog-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+}
+.catalog-card {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    position: relative;
+    overflow: hidden;
+}
+.catalog-card:hover {
+    background: rgba(96, 165, 250, 0.06);
+    border-color: rgba(96, 165, 250, 0.45);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+}
+.catalog-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+.catalog-card-id {
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.05);
+    padding: 2px 7px;
+    border-radius: 5px;
+}
+.catalog-card-target {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color, #e2e8f0);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.catalog-card-target i { color: #ef4444; font-size: 10px; }
+.catalog-card-attack {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    line-height: 1.4;
+}
+.catalog-card-launch {
+    align-self: flex-start;
+    font-size: 11px;
+    color: #60a5fa;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: rgba(96, 165, 250, 0.1);
+    border: 1px solid rgba(96, 165, 250, 0.25);
+    transition: all 0.15s;
+}
+.catalog-card:hover .catalog-card-launch {
+    background: rgba(96, 165, 250, 0.2);
+    border-color: #60a5fa;
+}
+.catalog-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 10px;
+    font-style: italic;
+}
 
 /* ── Tutorial Modal ── */
 .modal-overlay {
@@ -2307,3 +2661,191 @@ body.lightweight-mode .signal-bar {
 /* ── Misc helpers ── */
 .text-muted { color: var(--text-muted); }
 .loading-text { color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 8px; padding: 12px 0; }
+
+/* ============================================================ */
+/*  TOUCH-FRIENDLY MODE for Raspberry Pi 7-inch touchscreens     */
+/*  Activates on screens narrower than 1100px (1024×600, etc.)   */
+/* ============================================================ */
+@media (max-width: 1100px) {
+    /* --- Sidebar: hide by default, slide in on demand --- */
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        width: 240px;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        z-index: 1000;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .mobile-menu-toggle {
+        display: flex !important;
+        width: 48px;
+        height: 48px;
+        font-size: 22px;
+    }
+    .main-content { margin-left: 0 !important; padding: 60px 14px 14px !important; }
+
+    /* --- Header --- */
+    .top-nav { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .top-nav h1 { font-size: 19px; }
+    .top-nav .subtitle { font-size: 12px; }
+
+    /* --- Stats Bar: 2x2 grid instead of 1x4 --- */
+    .lab-stats-bar {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px;
+    }
+    .lab-stat { padding: 12px; gap: 10px; }
+    .lab-stat > i { font-size: 20px; }
+    .lab-stat-num { font-size: 19px; }
+    .lab-stat-label { font-size: 10px; }
+
+    /* --- Lab control cards: stack vertically --- */
+    .lab-status-grid { grid-template-columns: 1fr !important; }
+    .lab-master-btns, .lab-inject-btns { flex-wrap: wrap; }
+    .lab-master-btns button, .lab-inject-btns button { flex: 1; min-width: 0; }
+
+    /* --- Subnet cards: 1 per row on tiny screens --- */
+    .subnet-grid {
+        grid-template-columns: 1fr !important;
+        gap: 10px;
+    }
+
+    /* --- BLE device cards: 1 per row --- */
+    .ble-device-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* --- Catalog cards: 2 columns max --- */
+    .catalog-card-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+    .catalog-card { padding: 11px 12px; }
+    .catalog-card-target { font-size: 12.5px; }
+    .catalog-card-attack { font-size: 11px; }
+
+    /* --- Tap-friendly buttons (44px min touch target) --- */
+    .btn {
+        min-height: 44px;
+        padding: 10px 14px;
+        font-size: 13.5px;
+    }
+    .btn-sm { min-height: 38px; padding: 8px 12px; font-size: 12.5px; }
+    .btn-icon { width: 44px; height: 44px; }
+
+    /* --- Larger fonts for readability at arm's length --- */
+    .panel-header h3, .panel-header h4 { font-size: 15px; }
+    .scenario-card-title { font-size: 13px; }
+    .evidence-action, .evidence-result { font-size: 12px; }
+
+    /* --- Modals: full-width on small screens --- */
+    .modal-content,
+    .confirm-dialog {
+        max-width: 95vw !important;
+        max-height: 85vh;
+        overflow-y: auto;
+    }
+    .modal-overlay { padding: 10px; }
+    .confirm-dialog-overlay { padding: 10px; }
+
+    /* --- Scenario cards: stack actions vertically if needed --- */
+    .scenario-card {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 10px;
+    }
+    .scenario-card-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    /* --- Activity log: larger fonts, more padding --- */
+    .activity-event {
+        padding: 10px 12px;
+        font-size: 12px;
+        flex-wrap: wrap;
+    }
+    .activity-time { font-size: 10px; }
+}
+
+/* --- Very small touchscreens (800×480) --- */
+@media (max-width: 850px) {
+    .lab-stats-bar { grid-template-columns: 1fr 1fr !important; }
+    .catalog-card-grid { grid-template-columns: 1fr !important; }
+    .scenario-card-actions { flex-direction: column; width: 100%; }
+    .scenario-card-actions .btn { width: 100%; }
+    .top-nav h1 { font-size: 17px; }
+    .main-content { padding: 56px 10px 10px !important; }
+    .glass-panel { padding: 12px !important; margin-bottom: 14px !important; }
+}
+
+/* --- Touch input optimizations (no hover relied upon) --- */
+@media (hover: none) and (pointer: coarse) {
+    .catalog-card:hover,
+    .scenario-card:hover,
+    .ble-device-card:hover,
+    .subnet-card:hover {
+        transform: none;
+    }
+    /* Make all interactive elements feel tappable */
+    .scenario-filter-btn,
+    .learning-id,
+    .catalog-card,
+    .vuln-tag {
+        min-height: 36px;
+        display: inline-flex;
+        align-items: center;
+    }
+}
+
+/* ============================================================ */
+/*  FINE-TUNED for Raspberry Pi 7-inch 1024×600 specifically     */
+/*  Targets horizontal space well, conserves vertical space      */
+/* ============================================================ */
+@media (min-width: 851px) and (max-width: 1100px) {
+    /* Stats Bar: 4 cards in one row (we have horizontal room) */
+    .lab-stats-bar {
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 8px;
+    }
+    .lab-stat { padding: 10px; gap: 8px; }
+    .lab-stat > i { font-size: 18px; }
+    .lab-stat-num { font-size: 18px; }
+    .lab-stat-label { font-size: 9.5px; letter-spacing: 0.3px; }
+
+    /* Catalog: 3 columns at this width */
+    .catalog-card-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        gap: 8px;
+    }
+    .catalog-card { padding: 10px 11px; }
+    .catalog-card-target { font-size: 12px; margin-bottom: 4px; }
+    .catalog-card-attack { font-size: 10.5px; margin-bottom: 7px; }
+    .catalog-card-launch { font-size: 10.5px; padding: 3px 8px; }
+
+    /* Subnet cards: 3 in a row */
+    .subnet-grid {
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 8px;
+    }
+
+    /* BLE cards: 3 in a row */
+    .ble-device-grid {
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 8px;
+    }
+
+    /* Tighten vertical padding to fit more in 600px height */
+    .glass-panel { padding: 12px 14px !important; margin-bottom: 14px !important; }
+    .top-nav { padding: 10px 14px !important; gap: 6px; }
+    .top-nav h1 { font-size: 18px; margin: 0; }
+    .top-nav .subtitle { font-size: 11px; margin: 0; }
+    .main-content { padding: 56px 12px 12px !important; }
+
+    /* Smaller panel headers to save vertical space */
+    .panel-header { margin-bottom: 8px; padding-bottom: 6px; }
+    .panel-header h3 { font-size: 13px; }
+}

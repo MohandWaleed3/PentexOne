@@ -179,18 +179,41 @@ class LabProcessManager:
             self._last_error = ""
 
             try:
-                # Discard stdout/stderr — keeping pipes open without a reader
-                # would deadlock the child once its kernel pipe buffer fills.
+                # Capture stderr so we can surface the real failure reason
+                # if the simulator crashes immediately.
                 self._ble_proc = subprocess.Popen(
                     [sys.executable, str(_BLE_SCRIPT)],
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
                 )
                 # Give it 2 seconds to fail fast
                 await asyncio.sleep(2)
-                self._refresh_ble_status()
 
-                if self._ble_status == LabStatus.ERROR:
+                # Check if the process died during startup
+                ret = self._ble_proc.poll()
+                if ret is not None:
+                    # Process exited — read stderr to find out why
+                    try:
+                        err_bytes = self._ble_proc.stderr.read() if self._ble_proc.stderr else b""
+                        err_text = err_bytes.decode(errors="replace").strip()
+                    except Exception:
+                        err_text = ""
+
+                    self._ble_proc = None
+                    self._ble_status = LabStatus.ERROR
+
+                    if "No module named 'bumble'" in err_text or "ModuleNotFoundError" in err_text:
+                        self._last_error = (
+                            "BLE simulator requires the 'bumble' Python package. "
+                            "Install it with: pip install -r virtual_lab/ble_lab/requirements.txt"
+                        )
+                    elif err_text:
+                        last_line = err_text.splitlines()[-1] if err_text else ""
+                        self._last_error = f"BLE simulator failed to start: {last_line[:200]}"
+                    else:
+                        self._last_error = f"BLE simulator exited with code {ret} (no error output)"
+
+                    logger.warning(self._last_error)
                     return {"ok": False, "error": self._last_error}
 
                 self._ble_status = LabStatus.RUNNING

