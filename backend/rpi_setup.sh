@@ -107,10 +107,48 @@ echo -e "${GREEN}📦 Step 5: Setting up environment...${NC}"
 if [ ! -f .env ]; then
     echo "PENTEX_USERNAME=admin" > .env
     echo "PENTEX_PASSWORD=pentex2024" >> .env
+    echo "# Nmap performance tuning for RPi 5 (default: 1000 packets/sec)" >> .env
+    echo "# PENTEX_NMAP_MIN_RATE=500  # Uncomment and lower for Pi 3 or weak WiFi" >> .env
+    echo "# NVD API Key (optional, enables 30 CPE lookups instead of 8)" >> .env
+    echo "# NVD_API_KEY=your_key_here" >> .env
+    echo "# Offline-only mode (skips any API fallback)" >> .env
+    echo "# PENTEX_NVD_OFFLINE_ONLY=1" >> .env
     echo -e "${YELLOW}⚠️  Created .env file with default credentials${NC}"
     echo -e "${RED}🔴 IMPORTANT: Change the password in .env file!${NC}"
 else
     echo "✅ .env file already exists"
+fi
+echo ""
+
+echo -e "${GREEN}📦 Step 5a: Downloading NVD offline feeds...${NC}"
+if [ -f scripts/download_nvd_feeds.sh ]; then
+    chmod +x scripts/download_nvd_feeds.sh
+    echo "NVD feeds will be downloaded on first backend start."
+    echo "To download now (background): nohup ./scripts/download_nvd_feeds.sh &"
+    echo "⚠️  Feeds are ~500MB total and take 5-10 minutes on typical Pi 5 internet"
+    echo "💡 Tip: Download on a fast connection first, or accept API fallback initially"
+else
+    echo -e "${YELLOW}⚠️  scripts/download_nvd_feeds.sh not found, skipping${NC}"
+fi
+echo ""
+
+echo -e "${GREEN}📦 Step 5b: Configuring Nmap capabilities...${NC}"
+if command -v nmap &> /dev/null; then
+    setcap cap_net_raw,cap_net_admin=eip /usr/bin/nmap 2>/dev/null || true
+    echo "✅ Nmap SYN scans enabled without sudo"
+    echo "   (via CAP_NET_RAW and CAP_NET_ADMIN capabilities)"
+else
+    echo -e "${YELLOW}⚠️  Nmap not found${NC}"
+fi
+echo ""
+
+echo -e "${GREEN}📦 Step 5c: Adding user to bluetooth group...${NC}"
+if [ ! -z "$SUDO_USER" ]; then
+    usermod -aG bluetooth "$SUDO_USER" 2>/dev/null || true
+    echo "✅ User '$SUDO_USER' added to bluetooth group"
+    echo "   (log out and back in for this to take effect)"
+else
+    echo -e "${YELLOW}⚠️  SUDO_USER not set, skipping${NC}"
 fi
 echo ""
 
@@ -143,24 +181,39 @@ echo -e "${GREEN}✅ Installation Complete!${NC}"
 echo "=========================================="
 echo ""
 echo "📋 Next Steps:"
-echo "   1. Edit .env file to change default password:"
-echo "      nano .env"
 echo ""
-echo "   2. Start the service:"
+echo "   📝 1. Edit .env to customize:"
+echo "      nano .env"
+echo "      - Change PENTEX_PASSWORD"
+echo "      - Optionally add NVD_API_KEY or tune PENTEX_NMAP_MIN_RATE"
+echo ""
+echo "   📥 2. Download NVD CVE feeds (if not yet done):"
+echo "      cd backend && ./scripts/download_nvd_feeds.sh"
+echo "      (⚠️  Takes 5-10min on Pi 5, ~500MB; can skip initially)"
+echo ""
+echo "   🔄 3. Log out and back in (for bluetooth group permission):"
+echo "      exit && ssh back in, or 'newgrp bluetooth'"
+echo ""
+echo "   ▶️  4. Start the service:"
 echo "      sudo systemctl start pentexone"
 echo ""
-echo "   3. Check status:"
+echo "   📊 5. Check status:"
 echo "      sudo systemctl status pentexone"
 echo ""
-echo "   4. View logs:"
+echo "   📜 6. View logs:"
 echo "      sudo journalctl -u pentexone -f"
 echo ""
-echo "   5. Access dashboard:"
+echo "   🌐 7. Access dashboard:"
 echo "      http://<raspberry-pi-ip>:8000"
+echo ""
+echo "⚙️  Environment Variables (in .env):"
+echo "   - PENTEX_NMAP_MIN_RATE: packets/sec (default 1000, lower for weak WiFi)"
+echo "   - NVD_API_KEY: enables 30 CPE lookups vs 8 (optional)"
+echo "   - PENTEX_NVD_OFFLINE_ONLY: skip API fallback (optional)"
 echo ""
 echo "📚 Documentation:"
 echo "   - Hardware Guide: HARDWARE_GUIDE.md"
 echo "   - Raspberry Pi Guide: RASPBERRY_PI_GUIDE.md"
 echo ""
-echo -e "${YELLOW}🔴 REMEMBER TO CHANGE DEFAULT PASSWORD!${NC}"
+echo -e "${RED}🔴 IMPORTANT: Change PENTEX_PASSWORD in .env!${NC}"
 echo "=========================================="
