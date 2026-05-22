@@ -122,7 +122,7 @@ class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="text/html"):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
-        self.send_header("Server", "TP-Link httpd/1.0")
+        self.send_header("Server", "Apache/2.4.29 (Ubuntu)")
         self.send_header("X-Firmware", "3.16.9 Build 150311")
         body_bytes = body.encode() if isinstance(body, str) else body
         self.send_header("Content-Length", str(len(body_bytes)))

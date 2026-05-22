@@ -163,7 +163,7 @@ class DSMHandler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="text/html"):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
-        self.send_header("Server", "nginx/1.18.0 (Synology/DSM-" + NAS["dsm_version"] + ")")
+        self.send_header("Server", "nginx/1.18.0")
         body_bytes = body.encode() if isinstance(body, str) else body
         self.send_header("Content-Length", str(len(body_bytes)))
         self.end_headers()
@@ -208,7 +208,7 @@ def ftp_service():
     while True:
         try:
             conn, addr = s.accept()
-            conn.sendall(b"220 Synology FTP Server (DSM " + NAS["dsm_version"].encode() + b") ready.\r\n")
+            conn.sendall(b"220 ProFTPD 1.3.5e Server (corporate-nas) [::ffff:172.30.30.50]\r\n")
             conn.sendall(b"220-Anonymous logins permitted.\r\n")
             data = conn.recv(1024)
             if data:

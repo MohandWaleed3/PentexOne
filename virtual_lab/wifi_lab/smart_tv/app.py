@@ -90,7 +90,7 @@ class SmartTVHandler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="text/html"):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
-        self.send_header("Server", "Samsung-Tizen/5.5")
+        self.send_header("Server", "Apache/2.4.29 (Debian)")
         body_bytes = body.encode() if isinstance(body, str) else body
         self.send_header("Content-Length", str(len(body_bytes)))
         self.end_headers()
