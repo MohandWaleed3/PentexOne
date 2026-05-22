@@ -18,6 +18,7 @@ from ai_engine import (
 )
 from action_planner import generate_action_plan
 from anomaly_detector import analyze_network as detect_anomalies
+from cve_lookup import _epss_cache_get
 
 router = APIRouter(prefix="/ai", tags=["AI Analysis"])
 
@@ -311,6 +312,23 @@ async def ai_action_plan(max_actions: int = 8, db: Session = Depends(get_db)):
 
     devices_payload = []
     for d in devices:
+        vulns = []
+        for v in d.vulnerabilities:
+            entry = {
+                "vuln_type": v.vuln_type,
+                "severity": v.severity,
+                "description": v.description,
+                "port": v.port,
+            }
+            # If this is a CVE, look up its EPSS score from the cache so the
+            # action planner can prioritize actively-exploited threats first.
+            if v.vuln_type and v.vuln_type.startswith("CVE-"):
+                epss = _epss_cache_get(v.vuln_type)
+                if epss:
+                    entry["epss_score"] = epss["epss_score"]
+                    entry["actively_exploited"] = (epss["epss_score"] or 0) >= 0.70
+            vulns.append(entry)
+
         devices_payload.append({
             "id": d.id,
             "ip": d.ip,
@@ -319,15 +337,7 @@ async def ai_action_plan(max_actions: int = 8, db: Session = Depends(get_db)):
             "protocol": d.protocol,
             "risk_level": d.risk_level,
             "risk_score": d.risk_score,
-            "vulnerabilities": [
-                {
-                    "vuln_type": v.vuln_type,
-                    "severity": v.severity,
-                    "description": v.description,
-                    "port": v.port,
-                }
-                for v in d.vulnerabilities
-            ],
+            "vulnerabilities": vulns,
         })
 
     plan = generate_action_plan(devices_payload, max_actions=max_actions)

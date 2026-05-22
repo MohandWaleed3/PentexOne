@@ -510,18 +510,28 @@ async def run_credential_test(ip: str):
             })
             return
 
+        # Vendor-aware credential ordering — try vendor-specific defaults first.
+        try:
+            from default_creds import creds_for_device
+            cred_list = creds_for_device(
+                hostname=device.hostname or "",
+                vendor=device.vendor or "",
+            )[:25]  # cap to keep tests fast and avoid lockouts
+        except ImportError:
+            cred_list = TOP_DEFAULT_CREDS
+
         # Map open ports to probe functions.
         # (port_to_check, service_label, probe_callable)
         probes = []
         for p in ports_list:
             if p == 22:
-                probes.append((p, "SSH",   lambda ip=ip, p=p: _try_ssh_auth(ip, p, TOP_DEFAULT_CREDS)))
+                probes.append((p, "SSH",   lambda ip=ip, p=p: _try_ssh_auth(ip, p, cred_list)))
             elif p == 21:
-                probes.append((p, "FTP",   lambda ip=ip, p=p: _try_ftp_auth(ip, p, TOP_DEFAULT_CREDS)))
+                probes.append((p, "FTP",   lambda ip=ip, p=p: _try_ftp_auth(ip, p, cred_list)))
             elif p in (80, 8080, 8081, 8888):
-                probes.append((p, "HTTP",  lambda ip=ip, p=p: _try_http_basic_auth(ip, p, TOP_DEFAULT_CREDS, "http")))
+                probes.append((p, "HTTP",  lambda ip=ip, p=p: _try_http_basic_auth(ip, p, cred_list, "http")))
             elif p in (443, 8443):
-                probes.append((p, "HTTPS", lambda ip=ip, p=p: _try_http_basic_auth(ip, p, TOP_DEFAULT_CREDS, "https")))
+                probes.append((p, "HTTPS", lambda ip=ip, p=p: _try_http_basic_auth(ip, p, cred_list, "https")))
 
         if not probes:
             manager.broadcast({

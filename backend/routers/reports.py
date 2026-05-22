@@ -15,6 +15,11 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from database import get_db, Device, Vulnerability
 from models import ReportSummary
 
+try:
+    from routers.wifi_bt import COMPLIANCE_MAP
+except ImportError:
+    COMPLIANCE_MAP = {}
+
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
 
@@ -344,6 +349,16 @@ async def generate_pdf_report(db: Session = Depends(get_db)):
                 block.append(Paragraph(title, styles["VulnTitle"]))
                 if v.description:
                     block.append(Paragraph(v.description, styles["VulnDesc"]))
+                compliance = COMPLIANCE_MAP.get(v.vuln_type or "", {})
+                if compliance:
+                    refs = " &nbsp; ".join(
+                        f"<font color='#6366f1'>{std}</font>&nbsp;{ctrl}"
+                        for std, ctrl in compliance.items()
+                    )
+                    block.append(Paragraph(
+                        f"<b>Standards violated:</b> {refs}",
+                        styles["VulnDesc"]
+                    ))
                 block.append(Paragraph(
                     f"<b>Remediation:</b> {_remediation_for(v.vuln_type)}",
                     styles["Remediation"]

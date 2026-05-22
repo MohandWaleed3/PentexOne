@@ -287,7 +287,8 @@ def generate_action_plan(
     """
     # 1.  Cluster vulnerabilities by type across devices
     clusters: Dict[str, Dict] = defaultdict(
-        lambda: {"vuln_type": "", "severity": "MEDIUM",
+        lambda: {"vuln_type": "", "severity": "MEDIUM", "max_epss": 0.0,
+                 "actively_exploited": False,
                  "devices": [], "ports": set(), "descriptions": []}
     )
 
@@ -304,6 +305,12 @@ def generate_action_plan(
             sev_rank = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "SAFE": 0}
             if sev_rank.get(sev, 2) > sev_rank.get(c["severity"], 2):
                 c["severity"] = sev
+            # Track the highest EPSS score for this cluster (active exploitation signal)
+            epss = v.get("epss_score") or 0.0
+            if epss > c["max_epss"]:
+                c["max_epss"] = epss
+            if v.get("actively_exploited"):
+                c["actively_exploited"] = True
             c["devices"].append(_device_label(dev))
             if v.get("port"):
                 c["ports"].add(v["port"])
@@ -331,6 +338,13 @@ def generate_action_plan(
         elif cluster["severity"] == "HIGH":
             priority_score += 1
 
+        # EPSS boost: actively-exploited threats jump to the top of the queue.
+        # epss=0.7 → +3.5  ;  epss=0.95 → +4.75 (puts it ahead of dormant CRITICALs)
+        if cluster["max_epss"] >= 0.70:
+            priority_score += 5 * cluster["max_epss"]
+        elif cluster["max_epss"] >= 0.30:
+            priority_score += 2 * cluster["max_epss"]
+
         # Friendly title: collapse to "N devices" when many affected
         device_phrase = (
             cluster["devices"][0]
@@ -353,6 +367,8 @@ def generate_action_plan(
             "steps": template["steps"],
             "why_it_matters": template["why"],
             "is_specific": is_specific,
+            "max_epss": round(cluster["max_epss"], 4),
+            "actively_exploited": cluster["actively_exploited"],
         })
 
     # 3.  Sort and rank
