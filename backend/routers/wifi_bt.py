@@ -34,7 +34,7 @@ from routers.iot import get_hostname_enhanced, get_vendor_from_mac
 from websocket_manager import manager
 from security_assessment import SecurityAssessmentLayer
 from nmap_scanner import PentexNmapScanner
-from cve_lookup import lookup_cves_for_ports
+from cve_lookup import lookup_cves_for_ports, enrich_with_epss
 
 router = APIRouter(prefix="/wireless", tags=["WiFi & Bluetooth"])
 
@@ -70,6 +70,39 @@ VULN_RULES = {
     5900: ("VNC_EXPOSED",          "Critical", "vnc",        "VNC remote desktop exposed. Often runs without authentication or with weak passwords.",                                      "Require VNC password. Tunnel over SSH. Block port 5900 externally."),
     8080: ("HTTP_ALT_EXPOSED",     "Medium",   "http-alt",   "Alternative HTTP port exposed. May expose admin panels, dev servers, or staging environments.",                            "Restrict access. Remove or secure admin panels. Enforce authentication on all management interfaces."),
     8443: ("HTTPS_ALT_EXPOSED",    "Medium",   "https-alt",  "Alternative HTTPS port exposed. Verify TLS configuration and restrict admin access.",                                      "Enforce TLS 1.2+. Require strong authentication. Limit access by IP."),
+}
+
+# Compliance mapping: vuln_type → {standard: control-id}
+# PCI-DSS 4.0, NIST SP 800-53 Rev5, CIS Controls v8, OWASP IoT Top 10 2018
+COMPLIANCE_MAP = {
+    "FTP_CLEARTEXT":       {"PCI-DSS": "4.2.1", "NIST": "SC-8",    "CIS": "3.10", "OWASP-IoT": "I7"},
+    "SSH_WEAK_CONFIG":     {"PCI-DSS": "2.2.7",  "NIST": "AC-17",   "CIS": "4.1",  "OWASP-IoT": "I1"},
+    "TELNET_CLEARTEXT":    {"PCI-DSS": "4.2.1",  "NIST": "SC-8",    "CIS": "3.10", "OWASP-IoT": "I7"},
+    "SMTP_OPEN_RELAY":     {"PCI-DSS": "1.3.2",  "NIST": "SC-7",    "CIS": "9.2",  "OWASP-IoT": "I7"},
+    "DNS_AMPLIFICATION":   {"PCI-DSS": "1.3.2",  "NIST": "SC-5",    "CIS": "9.2",  "OWASP-IoT": "I9"},
+    "HTTP_UNENCRYPTED":    {"PCI-DSS": "4.2.1",  "NIST": "SC-8",    "CIS": "3.10", "OWASP-IoT": "I7"},
+    "POP3_CLEARTEXT":      {"PCI-DSS": "4.2.1",  "NIST": "SC-8",    "CIS": "3.10", "OWASP-IoT": "I7"},
+    "RPC_PORTMAPPER":      {"PCI-DSS": "1.3.2",  "NIST": "CM-7",    "CIS": "4.8",  "OWASP-IoT": "I9"},
+    "MSRPC_EXPOSED":       {"PCI-DSS": "1.3.2",  "NIST": "CM-7",    "CIS": "4.8",  "OWASP-IoT": "I9"},
+    "NETBIOS_EXPOSED":     {"PCI-DSS": "1.3.2",  "NIST": "CM-7",    "CIS": "4.8",  "OWASP-IoT": "I9"},
+    "IMAP_CLEARTEXT":      {"PCI-DSS": "4.2.1",  "NIST": "SC-8",    "CIS": "3.10", "OWASP-IoT": "I7"},
+    "WEAK_TLS_SUPPORT":    {"PCI-DSS": "4.2.1",  "NIST": "SC-8",    "CIS": "3.10", "OWASP-IoT": "I7"},
+    "SMB_EXPOSED":         {"PCI-DSS": "1.3.2",  "NIST": "CM-7",    "CIS": "4.8",  "OWASP-IoT": "I9"},
+    "SYSLOG_EXPOSED":      {"PCI-DSS": "10.5.1", "NIST": "AU-9",    "CIS": "8.2",  "OWASP-IoT": "I9"},
+    "AFP_EXPOSED":         {"PCI-DSS": "1.3.2",  "NIST": "CM-7",    "CIS": "4.8",  "OWASP-IoT": "I9"},
+    "RTSP_STREAM_EXPOSED": {"PCI-DSS": "1.3.2",  "NIST": "AC-3",    "CIS": "6.7",  "OWASP-IoT": "I2"},
+    "SOCKS_PROXY":         {"PCI-DSS": "1.3.2",  "NIST": "SC-7",    "CIS": "9.2",  "OWASP-IoT": "I9"},
+    "MSSQL_EXPOSED":       {"PCI-DSS": "1.3.2",  "NIST": "CM-7",    "CIS": "4.8",  "OWASP-IoT": "I9"},
+    "PPTP_VPN_WEAK":       {"PCI-DSS": "4.2.1",  "NIST": "SC-8",    "CIS": "3.10", "OWASP-IoT": "I7"},
+    "MYSQL_EXPOSED":       {"PCI-DSS": "1.3.2",  "NIST": "CM-7",    "CIS": "4.8",  "OWASP-IoT": "I9"},
+    "RDP_EXPOSED":         {"PCI-DSS": "2.2.7",  "NIST": "AC-17",   "CIS": "4.5",  "OWASP-IoT": "I1"},
+    "VNC_EXPOSED":         {"PCI-DSS": "2.2.7",  "NIST": "AC-17",   "CIS": "4.5",  "OWASP-IoT": "I1"},
+    "HTTP_ALT_EXPOSED":    {"PCI-DSS": "4.2.1",  "NIST": "SC-8",    "CIS": "3.10", "OWASP-IoT": "I7"},
+    "HTTPS_ALT_EXPOSED":   {"PCI-DSS": "4.2.1",  "NIST": "SC-8",    "CIS": "3.10", "OWASP-IoT": "I7"},
+    "DEFAULT_CREDENTIALS": {"PCI-DSS": "2.2.2",  "NIST": "IA-5(1)", "CIS": "5.2",  "OWASP-IoT": "I1"},
+    "RSYNC_EXPOSED":       {"PCI-DSS": "1.3.2",  "NIST": "CM-7",    "CIS": "4.8",  "OWASP-IoT": "I9"},
+    "IPP_EXPOSED":         {"PCI-DSS": "1.3.2",  "NIST": "CM-7",    "CIS": "4.8",  "OWASP-IoT": "I9"},
+    "VPN_EXPOSED":         {"PCI-DSS": "4.2.1",  "NIST": "SC-8",    "CIS": "3.10", "OWASP-IoT": "I7"},
 }
 
 SERVICES_MAP = {
@@ -196,7 +229,8 @@ async def run_port_scan(ip: str, db_session: Session = None):
                         vid, rlvl, vsvc, desc, rem = VULN_RULES[p]
                         vulnerabilities.append({
                             "id": vid, "port": p, "service": vsvc,
-                            "risk_level": rlvl.upper(), "description": desc, "remediation": rem
+                            "risk_level": rlvl.upper(), "description": desc, "remediation": rem,
+                            "compliance": COMPLIANCE_MAP.get(vid, {})
                         })
 
             # 3.b CVE lookup from NVD for any port that has a CPE
@@ -231,16 +265,25 @@ async def run_port_scan(ip: str, db_session: Session = None):
                     (p_info["service"] for p_info in real_results["ports"]
                      if p_info["port"] == port), "unknown"
                 )
-                for c in cves:
+                enriched = enrich_with_epss(cves)
+                for c in enriched:
+                    epss_note = ""
+                    if c.get("actively_exploited"):
+                        epss_note = f" 🔥 EPSS {c['epss_score']:.0%} — actively exploited in the wild."
+                    elif c.get("epss_score") is not None:
+                        epss_note = f" EPSS {c['epss_score']:.1%}."
                     vulnerabilities.append({
                         "id": c["cve_id"],
                         "port": port,
                         "service": svc,
                         "risk_level": c["severity"],
-                        "description": f"{c['cve_id']} (CVSS {c.get('cvss_score') or 'N/A'}): {c['description']}",
+                        "description": f"{c['cve_id']} (CVSS {c.get('cvss_score') or 'N/A'}): {c['description']}{epss_note}",
                         "remediation": f"Update {svc} to a patched version. See {c['url']}",
                         "cve_id": c["cve_id"],
                         "cvss_score": c.get("cvss_score"),
+                        "epss_score": c.get("epss_score"),
+                        "epss_percentile": c.get("epss_percentile"),
+                        "actively_exploited": c.get("actively_exploited", False),
                         "reference": c["url"],
                     })
         
@@ -341,39 +384,43 @@ async def test_default_credentials(ip: str, background_tasks: BackgroundTasks):
     return {"status": "started", "message": f"جارٍ اختبار كلمات المرور الافتراضية على {ip}"}
 
 
-# Top default-credential pairs to actually try.
-# Kept short so the test stays fast and within reasonable lockout limits.
-TOP_DEFAULT_CREDS = [
-    ("admin", "admin"),
-    ("admin", ""),
-    ("admin", "password"),
-    ("admin", "1234"),
-    ("admin", "12345"),
-    ("root",  "root"),
-    ("root",  ""),
-    ("root",  "toor"),
-    ("user",  "user"),
-    ("support", "support"),
-]
+# Expanded credential list — vendor-aware, covers most IoT defaults
+try:
+    from default_creds import COMMON_CREDS as _DC
+    TOP_DEFAULT_CREDS = [(u, p) for u, p, _ in _DC]
+except ImportError:
+    TOP_DEFAULT_CREDS = [
+        ("admin", "admin"), ("admin", ""), ("admin", "password"),
+        ("admin", "1234"), ("admin", "12345"), ("root", "root"),
+        ("root", ""), ("user", "user"), ("support", "support"),
+    ]
 
 CRED_CONNECT_TIMEOUT = 3.0
 
 
 def _try_http_basic_auth(ip: str, port: int, creds: list, scheme: str = "http"):
-    """Try HTTP Basic Auth. Returns (user, pwd) on first success, else None."""
+    """Try HTTP Basic Auth on common admin paths. Returns (user, pwd) on first success, else None."""
     import requests
     from requests.auth import HTTPBasicAuth
-    url = f"{scheme}://{ip}:{port}/"
-    # First probe: does the endpoint actually challenge for auth?
-    try:
-        probe = requests.get(url, timeout=CRED_CONNECT_TIMEOUT, verify=False, allow_redirects=False)
-    except requests.RequestException:
+    base = f"{scheme}://{ip}:{port}"
+    # Probe common protected paths — root + typical IoT admin endpoints
+    PROBE_PATHS = ["/", "/admin", "/admin/", "/ISAPI/System/deviceInfo",
+                   "/cgi-bin/luci", "/manage/account/login"]
+    auth_url = None
+    for path in PROBE_PATHS:
+        try:
+            probe = requests.get(f"{base}{path}", timeout=CRED_CONNECT_TIMEOUT,
+                                 verify=False, allow_redirects=False)
+            if probe.status_code == 401 and "basic" in probe.headers.get("WWW-Authenticate", "").lower():
+                auth_url = f"{base}{path}"
+                break
+        except requests.RequestException:
+            continue
+    if not auth_url:
         return None
-    if probe.status_code != 401 or "basic" not in probe.headers.get("WWW-Authenticate", "").lower():
-        return None  # Not a Basic Auth endpoint — can't conclude from this probe.
     for user, pwd in creds:
         try:
-            r = requests.get(url, auth=HTTPBasicAuth(user, pwd),
+            r = requests.get(auth_url, auth=HTTPBasicAuth(user, pwd),
                              timeout=CRED_CONNECT_TIMEOUT, verify=False, allow_redirects=False)
             if r.status_code not in (401, 403):
                 return (user, pwd)
