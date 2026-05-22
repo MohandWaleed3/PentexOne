@@ -19,6 +19,10 @@ REST endpoints that integrate the IoT Virtual Lab with the PentexOne core:
   POST /lab/reset             — Remove all [LAB] devices from the DB
 """
 
+import socket
+import urllib.request
+import urllib.error
+
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -97,6 +101,51 @@ def _compute_risk(vuln_list: List[str]) -> tuple:
     elif total >= 20:
         return "MEDIUM", total
     return "SAFE", total
+
+
+def _probe_port(host_port: int, timeout: float = 2.0) -> bool:
+    """Try a TCP connect to localhost:host_port. Returns True if something is listening."""
+    try:
+        with socket.create_connection(("127.0.0.1", host_port), timeout=timeout):
+            return True
+    except (OSError, ConnectionRefusedError):
+        return False
+
+
+def _probe_device(dev: dict) -> dict:
+    """
+    Probe all host-mapped ports for a lab device.
+    Returns a dict with:
+      live: bool         — True if at least one port responded
+      ports: {str: bool} — per-port result
+      http_status: int | None — HTTP status from the first web port (80-mapped), if any
+    """
+    host_port_map: dict = dev.get("host_port_map", {})
+    port_results: dict = {}
+    http_status = None
+
+    for container_port_str, host_port in host_port_map.items():
+        up = _probe_port(host_port)
+        port_results[container_port_str] = up
+
+        # Quick HTTP check on web ports to get a real response code
+        if up and http_status is None and container_port_str in ("80", "8080", "5000"):
+            try:
+                req = urllib.request.urlopen(
+                    f"http://127.0.0.1:{host_port}/",
+                    timeout=2,
+                )
+                http_status = req.getcode()
+            except urllib.error.HTTPError as e:
+                http_status = e.code
+            except Exception:
+                pass
+
+    return {
+        "live": any(port_results.values()),
+        "ports": port_results,
+        "http_status": http_status,
+    }
 
 
 # ===========================================================================
@@ -224,17 +273,67 @@ async def get_device(ip: str):
 # ===========================================================================
 # POST /lab/quick-scan
 # ===========================================================================
+@router.get("/probe")
+async def probe_lab():
+    """
+    Probe all lab devices via their host-mapped ports (localhost:HOST_PORT).
+    Returns live/offline status per device — no DB writes, no Docker dependency.
+    Use this to verify containers are actually running before running quick-scan.
+    """
+    results = []
+    live_count = 0
+
+    for dev in LAB_DEVICES:
+        probe = await _run_probe(dev)
+        if probe["live"]:
+            live_count += 1
+        results.append({
+            "ip": dev["ip"],
+            "hostname": dev["hostname"],
+            "container": dev["container"],
+            "subnet": dev["subnet"],
+            **probe,
+        })
+
+    return {
+        "ok": True,
+        "live_count": live_count,
+        "total_count": len(LAB_DEVICES),
+        "all_live": live_count == len(LAB_DEVICES),
+        "devices": results,
+    }
+
+
+async def _run_probe(dev: dict) -> dict:
+    """Run _probe_device in a thread so it doesn't block the event loop."""
+    import asyncio
+    return await asyncio.to_thread(_probe_device, dev)
+
+
 @router.post("/quick-scan")
 async def quick_scan(db: Session = Depends(get_db)):
     """
-    Zero-wait Quick Scan — directly inject all registered lab devices into the DB.
-    Useful for demos and presentations where waiting for nmap is not desirable.
+    Live Quick Scan — probes each lab container via localhost:HOST_PORT, then
+    injects only the devices that are actually responding into the DB.
+    Returns a warning for any containers that are offline.
     """
-    inserted, updated = 0, 0
+    inserted, updated, skipped = 0, 0, []
 
     for dev in LAB_DEVICES:
+        # Verify the container is actually up before injecting fake data
+        probe = await _run_probe(dev)
+        if not probe["live"]:
+            skipped.append({
+                "hostname": dev["hostname"],
+                "container": dev["container"],
+                "reason": "no open ports on localhost — container likely not running",
+            })
+            continue
+
         risk_lvl, risk_score = _compute_risk(dev["vulnerabilities"])
-        ports_csv = ",".join(str(p) for p in dev["exposed_ports"])
+        # Use only ports confirmed live
+        live_ports = [int(p) for p, up in probe["ports"].items() if up]
+        ports_csv = ",".join(str(p) for p in (live_ports or dev["exposed_ports"]))
         tagged_name = tag_hostname(dev["hostname"], dev["subnet"])
 
         existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
@@ -249,7 +348,6 @@ async def quick_scan(db: Session = Depends(get_db)):
             existing.open_ports  = ports_csv
             existing.last_seen   = datetime.utcnow()
             device_id = existing.id
-            # clear old vulnerabilities to avoid duplicates
             db.query(Vulnerability).filter(Vulnerability.device_id == device_id).delete()
             updated += 1
         else:
@@ -271,7 +369,6 @@ async def quick_scan(db: Session = Depends(get_db)):
             device_id = new_dev.id
             inserted += 1
 
-        # add vulnerabilities
         for vcode in dev["vulnerabilities"]:
             sev = SEVERITY_MAP.get(vcode, "MEDIUM")
             db.add(Vulnerability(
@@ -279,23 +376,29 @@ async def quick_scan(db: Session = Depends(get_db)):
                 vuln_type   = vcode,
                 severity    = sev,
                 description = f"[LAB] {dev['device_type'].replace('_', ' ').title()} — {vcode.replace('_', ' ').lower()}",
-                port        = dev["exposed_ports"][0] if dev["exposed_ports"] else None,
+                port        = live_ports[0] if live_ports else None,
                 protocol    = "Wi-Fi",
             ))
 
     db.commit()
 
+    ok = inserted + updated > 0
+    message = f"Quick scan: {inserted} new, {updated} updated"
+    if skipped:
+        message += f", {len(skipped)} offline"
+
     activity_log.record(
         EventType.QUICK_SCAN,
-        message=f"Quick scan complete — {inserted} new, {updated} updated",
+        message=message,
         protocol="Wi-Fi",
-        metadata={"inserted": inserted, "updated": updated, "total": len(LAB_DEVICES)},
+        metadata={"inserted": inserted, "updated": updated, "skipped": len(skipped)},
     )
     return {
-        "ok": True,
-        "message": f"Quick scan complete — {inserted} new, {updated} updated",
+        "ok": ok,
+        "message": message,
         "inserted": inserted,
         "updated": updated,
+        "offline_containers": skipped,
         "total_devices": len(LAB_DEVICES),
     }
 
