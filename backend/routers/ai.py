@@ -352,15 +352,17 @@ async def ai_get_security_score(db: Session = Depends(get_db)):
             "score": {"score": 100, "grade": "A", "description": "No devices to analyze"}
         }
 
-    # Count risk levels
-    risk_counts = {"SAFE": 0, "MEDIUM": 0, "RISK": 0, "UNKNOWN": 0}
+    # Count risk levels — normalize CRITICAL/HIGH into the unified scale
+    LEVEL_SCORE = {"SAFE": 100, "LOW": 80, "MEDIUM": 50,
+                   "RISK": 10, "HIGH": 10, "CRITICAL": 0, "UNKNOWN": 30}
+    risk_counts: dict = {}
     for d in devices:
-        risk_counts[d.risk_level] = risk_counts.get(d.risk_level, 0) + 1
+        lvl = d.risk_level or "UNKNOWN"
+        risk_counts[lvl] = risk_counts.get(lvl, 0) + 1
 
-    # Calculate score
+    # Calculate score (weighted average of per-device scores)
     total = len(devices)
-    score = (risk_counts["SAFE"] * 100 + risk_counts["MEDIUM"]
-             * 50 + risk_counts["RISK"] * 0) / total
+    score = sum(LEVEL_SCORE.get(lvl, 30) * cnt for lvl, cnt in risk_counts.items()) / total
     score = round(score, 1)
 
     # Grade
@@ -375,17 +377,25 @@ async def ai_get_security_score(db: Session = Depends(get_db)):
     else:
         grade, description = "F", "Critical security state"
 
-    # Get improvement suggestions
+    # Improvement suggestions
+    critical_n = risk_counts.get("CRITICAL", 0)
+    high_n = risk_counts.get("HIGH", 0) + risk_counts.get("RISK", 0)
+    medium_n = risk_counts.get("MEDIUM", 0)
     suggestions = []
-    if risk_counts["RISK"] > 0:
+    if critical_n > 0:
+        suggestions.append({
+            "impact": 30,
+            "action": f"Remediate {critical_n} critical device(s) immediately"
+        })
+    if high_n > 0:
         suggestions.append({
             "impact": 20,
-            "action": f"Remediate {risk_counts['RISK']} high-risk devices"
+            "action": f"Address {high_n} high-risk device(s)"
         })
-    if risk_counts["MEDIUM"] > 0:
+    if medium_n > 0:
         suggestions.append({
             "impact": 10,
-            "action": f"Address {risk_counts['MEDIUM']} medium-risk devices"
+            "action": f"Review {medium_n} medium-risk device(s)"
         })
 
     return {
