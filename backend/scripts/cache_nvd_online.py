@@ -69,12 +69,15 @@ PRODUCTS = [
 
 
 def fetch_cves(vendor: str, product: str) -> list:
-    cpe = f"cpe:2.3:a:{vendor}:{product}:*:*:*:*:*:*:*:*"
+    # virtualMatchString does prefix matching across all CPEs — wildcards
+    # in vendor/product are NOT allowed by cpeName, but virtualMatchString
+    # finds any CVE referencing a CPE that starts with this string.
+    match_str = f"cpe:2.3:a:{vendor}:{product}"
     all_items = []
     start = 0
 
     while True:
-        params = {"cpeName": cpe, "resultsPerPage": 2000, "startIndex": start}
+        params = {"virtualMatchString": match_str, "resultsPerPage": 2000, "startIndex": start}
         try:
             resp = requests.get(NVD_API, params=params, headers=HEADERS, timeout=30)
         except requests.RequestException as e:
