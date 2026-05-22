@@ -16,6 +16,8 @@ from ai_engine import (
     get_remediation,
     REMEDIATION_DATABASE
 )
+from action_planner import generate_action_plan
+from anomaly_detector import analyze_network as detect_anomalies
 
 router = APIRouter(prefix="/ai", tags=["AI Analysis"])
 
@@ -97,6 +99,37 @@ async def ai_analyze_network(db: Session = Depends(get_db)):
         "status": "success",
         "device_count": len(devices),
         "analysis": analysis
+    }
+
+
+# ────────────────────────────────────────────────────────────
+# 2b. Network Anomaly Detection (real statistics, not heuristics)
+# ────────────────────────────────────────────────────────────
+@router.get("/anomalies")
+async def ai_detect_anomalies(db: Session = Depends(get_db)):
+    """
+    Runs unsupervised anomaly detection (z-score + IQR + Jaccard
+    similarity) over all devices. Returns ranked anomalies with
+    transparent reasoning — no black box, no fake ML.
+    """
+    devices = db.query(Device).all()
+    payload = [
+        {
+            "ip": d.ip,
+            "hostname": d.hostname,
+            "vendor": d.vendor,
+            "protocol": d.protocol,
+            "risk_level": d.risk_level,
+            "risk_score": d.risk_score,
+            "open_ports": d.open_ports,
+        }
+        for d in devices
+    ]
+    result = detect_anomalies(payload)
+    return {
+        "status": "success",
+        "device_count": len(devices),
+        **result,
     }
 
 
@@ -265,7 +298,46 @@ async def ai_classify_devices(db: Session = Depends(get_db)):
 
 
 # ────────────────────────────────────────────────────────────
-# 8. Security Score
+# 8. Prioritized Action Plan
+# ────────────────────────────────────────────────────────────
+@router.get("/action-plan")
+async def ai_action_plan(max_actions: int = 8, db: Session = Depends(get_db)):
+    """
+    Returns an AI-prioritized list of remediation actions across all devices,
+    ranked by (exploitability * impact) / effort, with clustered findings
+    and risk-reduction estimates.
+    """
+    devices = db.query(Device).all()
+
+    devices_payload = []
+    for d in devices:
+        devices_payload.append({
+            "id": d.id,
+            "ip": d.ip,
+            "hostname": d.hostname,
+            "vendor": d.vendor,
+            "protocol": d.protocol,
+            "risk_level": d.risk_level,
+            "risk_score": d.risk_score,
+            "vulnerabilities": [
+                {
+                    "vuln_type": v.vuln_type,
+                    "severity": v.severity,
+                    "description": v.description,
+                    "port": v.port,
+                }
+                for v in d.vulnerabilities
+            ],
+        })
+
+    plan = generate_action_plan(devices_payload, max_actions=max_actions)
+    plan["status"] = "success"
+    plan["timestamp"] = datetime.utcnow().isoformat()
+    return plan
+
+
+# ────────────────────────────────────────────────────────────
+# 9. Security Score
 # ────────────────────────────────────────────────────────────
 @router.get("/security-score")
 async def ai_get_security_score(db: Session = Depends(get_db)):

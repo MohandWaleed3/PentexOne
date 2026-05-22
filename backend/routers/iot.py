@@ -1,7 +1,8 @@
 from websocket_manager import manager
 from security_engine import calculate_risk
+from simulation_profiles import realistic_flags
 from models import DeviceOut, ScanRequest, ScanStatus
-from database import get_db, Device, Vulnerability, SessionLocal
+from database import get_db, Device, Vulnerability, SessionLocal, Setting
 import time
 import asyncio
 import socket
@@ -213,6 +214,8 @@ def detect_all_dongles() -> dict:
         'thread': None,
         'zwave': None,
         'bluetooth': None,
+        'lora': None,
+        'matter': None,
         'other_usb_serials': []
     }
 
@@ -293,11 +296,58 @@ def detect_all_dongles() -> dict:
             }
             logger.debug(f"✅ DETECTED: Bluetooth Adapter on {port.device}")
 
+        # Detect LoRaWAN dongles. Keywords must be LoRa-specific —
+        # bare "TTGO" / "LORA" match too many unrelated dev boards, so we
+        # require either a LoRa radio chip ID or an explicit LoRa product token.
+        lora_tokens = [
+            'DRAGINO', 'LORAWAN', 'LORA32', 'LORA-E5',
+            'SX1272', 'SX1276', 'SX1278', 'SX1261', 'SX1262', 'SX1268',
+            'RFM95', 'RFM96', 'RFM98',
+        ]
+        is_lora = any(t in desc_upper or t in hwid_upper for t in lora_tokens)
+        # HELTEC and TTGO boards exist in LoRa and non-LoRa variants — only
+        # accept them when "LORA" co-occurs in the description.
+        if not is_lora and ('LORA' in desc_upper) and \
+                any(t in desc_upper for t in ['HELTEC', 'TTGO']):
+            is_lora = True
+        if is_lora:
+            dongles['lora'] = {
+                'port': port.device,
+                'type': 'LoRaWAN',
+                'chip': 'SX127x / RFM9x',
+                'description': port.description,
+                'manufacturer': port.manufacturer or 'Unknown',
+                'status': 'CONNECTED ✅'
+            }
+            logger.debug(f"✅ DETECTED: LoRaWAN Dongle on {port.device}")
+
+        # Detect Matter dongles. Use specific Matter-capable chip/board IDs.
+        # Bare "MATTER" / "SILABS" are too generic — Silicon Labs also ships
+        # Zigbee-only dongles, and "matter" appears in unrelated descriptions.
+        matter_tokens = [
+            'EFR32MG12', 'EFR32MG21', 'EFR32MG24',
+            'MGM210', 'MGM240',
+            'MATTER-OVER-THREAD', 'MATTER OVER THREAD',
+        ]
+        is_matter = any(t in desc_upper or t in hwid_upper for t in matter_tokens)
+        if is_matter:
+            dongles['matter'] = {
+                'port': port.device,
+                'type': 'Matter',
+                'chip': 'EFR32 / MGM21x',
+                'description': port.description,
+                'manufacturer': port.manufacturer or 'Silicon Labs',
+                'status': 'CONNECTED ✅'
+            }
+            logger.debug(f"✅ DETECTED: Matter Dongle on {port.device}")
+
         # Add to other serials if not detected as known dongle
         if not any([dongles['zigbee'] and dongles['zigbee']['port'] == port.device,
                     dongles['thread'] and dongles['thread']['port'] == port.device,
                     dongles['zwave'] and dongles['zwave']['port'] == port.device,
-                    dongles['bluetooth'] and dongles['bluetooth']['port'] == port.device]):
+                    dongles['bluetooth'] and dongles['bluetooth']['port'] == port.device,
+                    dongles['lora'] and dongles['lora']['port'] == port.device,
+                    dongles['matter'] and dongles['matter']['port'] == port.device]):
             if 'USB' in desc_upper or 'SERIAL' in desc_upper:
                 dongles['other_usb_serials'].append({
                     'port': port.device,
@@ -344,13 +394,42 @@ def check_killerbee_available() -> bool:
         return False
 
 
-# ====== حالة الـ Scan (Global State) ======
+# ====== حالة الـ Scan (Global State, thread-safe) ======
+import threading
+
 scan_state = {
     "running": False,
     "progress": 0,
     "message": "جاهز",
-    "devices_found": 0
+    "devices_found": 0,
+    "active_scan_type": None,
 }
+_scan_state_lock = threading.Lock()
+
+
+def acquire_scan_slot(scan_type: str) -> bool:
+    """
+    Atomically claim the global scan slot. Returns True if acquired,
+    False if another scan is already in progress (in which case the
+    caller should refuse to start).
+    """
+    with _scan_state_lock:
+        if scan_state["running"]:
+            return False
+        scan_state["running"] = True
+        scan_state["progress"] = 0
+        scan_state["message"] = f"Starting {scan_type} scan..."
+        scan_state["devices_found"] = 0
+        scan_state["active_scan_type"] = scan_type
+        return True
+
+
+def release_scan_slot():
+    """Mark the global scan slot as free again."""
+    with _scan_state_lock:
+        scan_state["running"] = False
+        scan_state["progress"] = 100
+        scan_state["active_scan_type"] = None
 
 
 # ────────────────────────────────────────────────────────────
@@ -460,9 +539,11 @@ async def discover_networks():
 @router.post("/scan/wifi", response_model=ScanStatus)
 async def start_wifi_scan(request: ScanRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     logger.info(f"Received scan request for network: {request.network}")
-    if scan_state["running"]:
+    if not acquire_scan_slot("wifi"):
         logger.warning("Scan requested while another scan is already running")
-        return ScanStatus(status="busy", message="A scan is already running", devices_found=scan_state["devices_found"])
+        return ScanStatus(status="busy",
+                          message=f"A {scan_state.get('active_scan_type') or 'scan'} is already running.",
+                          devices_found=scan_state.get("devices_found", 0))
 
     background_tasks.add_task(run_nmap_scan, request.network)
     return ScanStatus(status="started", message=f"Starting network scan: {request.network}", devices_found=0)
@@ -724,7 +805,15 @@ def run_nmap_scan(network: str):
 # 2. فحص أجهزة Matter (mDNS Discovery)
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/matter", response_model=ScanStatus)
-async def start_matter_scan(background_tasks: BackgroundTasks):
+async def start_matter_scan(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    if not acquire_scan_slot("matter"):
+        return ScanStatus(status="busy",
+                          message=f"A {scan_state.get('active_scan_type') or 'scan'} is already running.",
+                          devices_found=scan_state.get("devices_found", 0))
+    sim = db.query(Setting).filter(Setting.key == "simulation_mode").first()
+    if sim and sim.value.lower() == "true":
+        background_tasks.add_task(run_matter_scan_simulated)
+        return ScanStatus(status="started", message="Simulated Matter scan...", devices_found=0)
     background_tasks.add_task(run_matter_scan)
     return ScanStatus(status="started", message="Searching for Matter devices...", devices_found=0)
 
@@ -760,9 +849,9 @@ def run_matter_scan():
 
     try:
         for dev in discovered:
-            risk_result = calculate_risk([], "Matter", {
-                "MATTER_OPEN_COMMISS": True,
-            })
+            risk_result = calculate_risk([], "Matter", realistic_flags(
+                "Matter", dev.get("vendor"), dev.get("hostname")
+            ))
             existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
             if not existing:
                 device = Device(
@@ -793,26 +882,72 @@ def run_matter_scan():
         db.close()
 
 
+def run_matter_scan_simulated():
+    db = SessionLocal()
+    try:
+        scan_state["running"] = True
+        mock_matter = [
+            {"ip": "192.168.5.10", "hostname": "Matter Smart Lock", "vendor": "Yale"},
+            {"ip": "192.168.5.11", "hostname": "Matter Thermostat", "vendor": "Ecobee"},
+        ]
+        for dev in mock_matter:
+            risk_result = calculate_risk([], "Matter", realistic_flags(
+                "Matter", dev.get("vendor"), dev.get("hostname")
+            ))
+            existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
+            if not existing:
+                device = Device(ip=dev["ip"], hostname=dev["hostname"], vendor=dev["vendor"],
+                                protocol="Matter", risk_level=risk_result["risk_level"],
+                                risk_score=risk_result["risk_score"], last_seen=datetime.utcnow())
+                db.add(device)
+                db.flush()
+                for v in risk_result["vulnerabilities"]:
+                    db.add(Vulnerability(device_id=device.id, vuln_type=v["vuln_type"],
+                                         severity=v["severity"], description=v["description"],
+                                         protocol=v.get("protocol")))
+                db.commit()
+                manager.broadcast({"event": "device_found", "device": {
+                    "hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
+        manager.broadcast({"event": "scan_finished", "type": "matter", "count": len(mock_matter)})
+    except Exception as e:
+        logger.error(f"Matter simulated scan failed: {e}")
+        try: db.rollback()
+        except Exception: pass
+        scan_state["message"] = f"Matter scan failed: {e}"
+        manager.broadcast({"event": "scan_error", "type": "matter", "message": str(e)})
+    finally:
+        scan_state["running"] = False
+        scan_state["progress"] = 100
+        db.close()
+
+
 # ────────────────────────────────────────────────────────────
 # 3. فحص أجهزة Zigbee (Real Hardware + Simulated)
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/zigbee", response_model=ScanStatus)
-async def start_zigbee_scan(background_tasks: BackgroundTasks):
+async def start_zigbee_scan(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    if not acquire_scan_slot("zigbee"):
+        return ScanStatus(status="busy",
+                          message=f"A {scan_state.get('active_scan_type') or 'scan'} is already running. Wait for it to finish.",
+                          devices_found=scan_state.get("devices_found", 0))
+
+    sim = db.query(Setting).filter(Setting.key == "simulation_mode").first()
+    if sim and sim.value.lower() == "true":
+        background_tasks.add_task(run_zigbee_scan_simulated)
+        return ScanStatus(status="started", message="Simulated Zigbee scan...", devices_found=0)
+
     dongle_port = detect_zigbee_dongle()
     has_killerbee = check_killerbee_available()
 
     if dongle_port and has_killerbee:
-        # Best case: dongle + KillerBee library
         background_tasks.add_task(run_zigbee_scan_real, dongle_port)
         return ScanStatus(status="started", message=f"Real Zigbee scan (KillerBee) on {dongle_port}...", devices_found=0)
     elif dongle_port:
-        # Dongle present but no KillerBee — use direct serial sniffing
         background_tasks.add_task(run_zigbee_scan_serial, dongle_port)
         return ScanStatus(status="started", message=f"Real Zigbee scan (serial) on {dongle_port}...", devices_found=0)
     else:
-        # No dongle at all — simulation
-        background_tasks.add_task(run_zigbee_scan_simulated)
-        return ScanStatus(status="started", message="Simulated Zigbee scan (no hardware detected)...", devices_found=0)
+        release_scan_slot()  # nothing to run — free the slot
+        return ScanStatus(status="error", message="No Zigbee hardware detected. Enable Simulation Mode to run a simulated scan.", devices_found=0)
 
 
 def run_zigbee_scan_real(port: str):
@@ -822,6 +957,7 @@ def run_zigbee_scan_real(port: str):
     db = SessionLocal()
     scan_state["running"] = True
     scan_state["message"] = f"Scanning Zigbee network on {port}..."
+    discovered = []
     manager.broadcast(
         {"event": "scan_progress", "progress": 10, "message": scan_state["message"]})
 
@@ -831,7 +967,6 @@ def run_zigbee_scan_real(port: str):
         sniffer = KBZigbeeSniffer(device=port)
         sniffer.set_channel(11)
 
-        discovered = []
         scan_state["message"] = "Sniffing Zigbee traffic..."
         manager.broadcast(
             {"event": "scan_progress", "progress": 30, "message": scan_state["message"]})
@@ -851,8 +986,9 @@ def run_zigbee_scan_real(port: str):
         sniffer.close()
 
         for dev in discovered:
-            risk_result = calculate_risk(
-                [], "Zigbee", {"ZIGBEE_DEFAULT_KEY": True})
+            risk_result = calculate_risk([], "Zigbee", realistic_flags(
+                "Zigbee", dev.get("vendor"), dev.get("hostname")
+            ))
             device_id = f"ZB:{dev['mac']}"
             existing = db.query(Device).filter(Device.ip == device_id).first()
             if not existing:
@@ -876,7 +1012,7 @@ def run_zigbee_scan_real(port: str):
         scan_state["running"] = False
         scan_state["progress"] = 100
         manager.broadcast({"event": "scan_finished", "type": "zigbee",
-                          "count": scan_state.get("devices_found", 0)})
+                          "count": len(discovered)})
         db.close()
 
 
@@ -1014,8 +1150,9 @@ def run_zigbee_scan_serial(port: str):
 
         # Persist discovered devices to DB
         for dev in discovered:
-            risk_result = calculate_risk(
-                [], "Zigbee", {"ZIGBEE_DEFAULT_KEY": True})
+            risk_result = calculate_risk([], "Zigbee", realistic_flags(
+                "Zigbee", dev.get("vendor"), dev.get("hostname")
+            ))
             device_id = f"ZB:{dev['mac']}"
             existing = db.query(Device).filter(Device.ip == device_id).first()
             if not existing:
@@ -1081,8 +1218,9 @@ def run_zigbee_scan_simulated():
         for i, dev in enumerate(mock_zigbee):
             import time
             time.sleep(1)  # Simulate discovery time
-            risk_result = calculate_risk(
-                [], "Zigbee", {"ZIGBEE_DEFAULT_KEY": True})
+            risk_result = calculate_risk([], "Zigbee", realistic_flags(
+                "Zigbee", dev.get("vendor"), dev.get("hostname")
+            ))
             existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
             if not existing:
                 device = Device(
@@ -1100,11 +1238,17 @@ def run_zigbee_scan_simulated():
                 manager.broadcast({"event": "device_found", "device": {
                                   "hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
 
-        scan_state["running"] = False
-        scan_state["progress"] = 100
         manager.broadcast(
             {"event": "scan_finished", "type": "zigbee", "count": len(mock_zigbee)})
+    except Exception as e:
+        logger.error(f"Zigbee simulated scan failed: {e}")
+        try: db.rollback()
+        except Exception: pass
+        scan_state["message"] = f"Zigbee scan failed: {e}"
+        manager.broadcast({"event": "scan_error", "type": "zigbee", "message": str(e)})
     finally:
+        scan_state["running"] = False
+        scan_state["progress"] = 100
         db.close()
 
 
@@ -1146,15 +1290,23 @@ async def clear_all_devices(db: Session = Depends(get_db)):
 # 6. Thread/Matter Deep Scan (Real Hardware Support)
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/thread", response_model=ScanStatus)
-async def start_thread_scan(background_tasks: BackgroundTasks):
-    dongle_port = detect_thread_dongle()
+async def start_thread_scan(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    if not acquire_scan_slot("thread"):
+        return ScanStatus(status="busy",
+                          message=f"A {scan_state.get('active_scan_type') or 'scan'} is already running.",
+                          devices_found=scan_state.get("devices_found", 0))
+    sim = db.query(Setting).filter(Setting.key == "simulation_mode").first()
+    if sim and sim.value.lower() == "true":
+        background_tasks.add_task(run_thread_scan_simulated)
+        return ScanStatus(status="started", message="Simulated Thread scan...", devices_found=0)
 
+    dongle_port = detect_thread_dongle()
     if dongle_port:
         background_tasks.add_task(run_thread_scan_real, dongle_port)
         return ScanStatus(status="started", message=f"Real Thread scan started on {dongle_port}...", devices_found=0)
     else:
-        background_tasks.add_task(run_thread_scan_simulated)
-        return ScanStatus(status="started", message="Simulated Thread scan (no hardware detected)...", devices_found=0)
+        release_scan_slot()
+        return ScanStatus(status="error", message="No Thread hardware detected. Enable Simulation Mode to run a simulated scan.", devices_found=0)
 
 
 def run_thread_scan_real(port: str):
@@ -1188,15 +1340,15 @@ def run_thread_scan_real(port: str):
         scan_state["message"] = f"Thread scan error: {str(e)}"
 
     if not discovered:
-        # Fallback to simulated if no hardware/devices found
-        run_thread_scan_simulated()
+        manager.broadcast({"event": "scan_finished", "type": "thread", "count": 0})
         db.close()
         return
 
     try:
         for dev in discovered:
-            risk_result = calculate_risk(
-                [], "Thread", {"THREAD_ACTIVE_COMMISSIONER": True})
+            risk_result = calculate_risk([], "Thread", realistic_flags(
+                "Thread", dev.get("vendor"), dev.get("hostname")
+            ))
             existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
             if not existing:
                 device = Device(
@@ -1239,8 +1391,9 @@ def run_thread_scan_simulated():
         for i, dev in enumerate(mock_thread):
             import time
             time.sleep(1)
-            risk_result = calculate_risk(
-                [], "Thread", {"THREAD_ACTIVE_COMMISSIONER": True})
+            risk_result = calculate_risk([], "Thread", realistic_flags(
+                "Thread", dev.get("vendor"), dev.get("hostname")
+            ))
             existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
             if not existing:
                 device = Device(
@@ -1257,11 +1410,17 @@ def run_thread_scan_simulated():
                 manager.broadcast({"event": "device_found", "device": {
                                   "hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
 
-        scan_state["running"] = False
-        scan_state["progress"] = 100
         manager.broadcast(
             {"event": "scan_finished", "type": "thread", "count": len(mock_thread)})
+    except Exception as e:
+        logger.error(f"Thread simulated scan failed: {e}")
+        try: db.rollback()
+        except Exception: pass
+        scan_state["message"] = f"Thread scan failed: {e}"
+        manager.broadcast({"event": "scan_error", "type": "thread", "message": str(e)})
     finally:
+        scan_state["running"] = False
+        scan_state["progress"] = 100
         db.close()
 
 
@@ -1269,9 +1428,16 @@ def run_thread_scan_simulated():
 # 7. Z-Wave Scan
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/zwave", response_model=ScanStatus)
-async def start_zwave_scan(background_tasks: BackgroundTasks):
+async def start_zwave_scan(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    sim = db.query(Setting).filter(Setting.key == "simulation_mode").first()
+    if not (sim and sim.value.lower() == "true"):
+        return ScanStatus(status="error", message="No Z-Wave hardware detected. Enable Simulation Mode to run a simulated scan.", devices_found=0)
+    if not acquire_scan_slot("zwave"):
+        return ScanStatus(status="busy",
+                          message=f"A {scan_state.get('active_scan_type') or 'scan'} is already running.",
+                          devices_found=scan_state.get("devices_found", 0))
     background_tasks.add_task(run_zwave_scan)
-    return ScanStatus(status="started", message="Starting Z-Wave network scan...", devices_found=0)
+    return ScanStatus(status="started", message="Simulated Z-Wave scan...", devices_found=0)
 
 
 def run_zwave_scan():
@@ -1307,8 +1473,9 @@ def run_zwave_scan():
         ]
 
         for dev in mock_zwave:
-            risk_result = calculate_risk(
-                [], "Z-Wave", {"ZWAVE_NO_ENCRYPTION": True})
+            risk_result = calculate_risk([], "Z-Wave", realistic_flags(
+                "Z-Wave", dev.get("vendor"), dev.get("hostname")
+            ))
             existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
             if not existing:
                 device = Device(
@@ -1322,11 +1489,17 @@ def run_zwave_scan():
                 manager.broadcast({"event": "device_found", "device": {
                                   "hostname": dev["hostname"], "ip": dev["ip"], "risk_level": device.risk_level}})
 
-        scan_state["running"] = False
-        scan_state["progress"] = 100
         manager.broadcast(
             {"event": "scan_finished", "type": "zwave", "count": len(mock_zwave)})
+    except Exception as e:
+        logger.error(f"Z-Wave scan failed: {e}")
+        try: db.rollback()
+        except Exception: pass
+        scan_state["message"] = f"Z-Wave scan failed: {e}"
+        manager.broadcast({"event": "scan_error", "type": "zwave", "message": str(e)})
     finally:
+        scan_state["running"] = False
+        scan_state["progress"] = 100
         db.close()
 
 
@@ -1334,9 +1507,16 @@ def run_zwave_scan():
 # 8. LoRaWAN Scan
 # ────────────────────────────────────────────────────────────
 @router.post("/scan/lora", response_model=ScanStatus)
-async def start_lora_scan(background_tasks: BackgroundTasks):
+async def start_lora_scan(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    sim = db.query(Setting).filter(Setting.key == "simulation_mode").first()
+    if not (sim and sim.value.lower() == "true"):
+        return ScanStatus(status="error", message="No LoRaWAN hardware detected. Enable Simulation Mode to run a simulated scan.", devices_found=0)
+    if not acquire_scan_slot("lorawan"):
+        return ScanStatus(status="busy",
+                          message=f"A {scan_state.get('active_scan_type') or 'scan'} is already running.",
+                          devices_found=scan_state.get("devices_found", 0))
     background_tasks.add_task(run_lora_scan)
-    return ScanStatus(status="started", message="Starting LoRaWAN scan...", devices_found=0)
+    return ScanStatus(status="started", message="Simulated LoRaWAN scan...", devices_found=0)
 
 
 def run_lora_scan():
@@ -1360,10 +1540,9 @@ def run_lora_scan():
         ]
 
         for dev in mock_lora:
-            risk_result = calculate_risk([], "LoRaWAN", {
-                "LORA_ABF_CONFIRMATION": True,
-                "LORA_WEAK_DEVNONCE": True
-            })
+            risk_result = calculate_risk([], "LoRaWAN", realistic_flags(
+                "LoRaWAN", dev.get("vendor"), dev.get("hostname")
+            ))
             existing = db.query(Device).filter(Device.ip == dev["ip"]).first()
             if not existing:
                 device = Device(
@@ -1389,8 +1568,16 @@ def run_lora_scan():
                 db.commit()
 
         scan_state["message"] = f"LoRaWAN scan complete. {len(mock_lora)} devices found."
-        scan_state["running"] = False
+        manager.broadcast({"event": "scan_finished", "type": "lorawan", "count": len(mock_lora)})
+    except Exception as e:
+        logger.error(f"LoRa scan failed: {e}")
+        try: db.rollback()
+        except Exception: pass
+        scan_state["message"] = f"LoRaWAN scan failed: {e}"
+        manager.broadcast({"event": "scan_error", "type": "lorawan", "message": str(e)})
     finally:
+        scan_state["running"] = False
+        scan_state["progress"] = 100
         db.close()
 
 
@@ -1433,6 +1620,57 @@ async def get_hardware_status():
 
     zigbee_connected = dongles['zigbee'] is not None
 
+    import socket as _socket
+    import os as _os
+    import subprocess as _sp
+
+    # Detect Wi-Fi (check if actually ON, not just interface exists)
+    wifi_iface = None
+    try:
+        if platform.system() == "Darwin":
+            # macOS: check airport power
+            for iface in ["en0", "en1", "en2"]:
+                out = _sp.run(["networksetup", "-getairportpower", iface],
+                              capture_output=True, text=True, timeout=3)
+                if "On" in out.stdout:
+                    wifi_iface = iface
+                    break
+        else:
+            # Linux: check interface is UP
+            out = _sp.run(["ip", "link"], capture_output=True, text=True, timeout=3)
+            for line in out.stdout.splitlines():
+                if any(x in line for x in ["wlan", "wlp", "wlo"]) and "UP" in line:
+                    wifi_iface = line.split(":")[1].strip().split("@")[0]
+                    break
+    except Exception:
+        pass
+
+    # Detect Bluetooth (check if actually ON)
+    bt_iface = None
+    try:
+        if platform.system() == "Darwin":
+            # macOS: check BT state via system_profiler
+            out = _sp.run(["system_profiler", "SPBluetoothDataType"],
+                          capture_output=True, text=True, timeout=5)
+            if "State: On" in out.stdout:
+                bt_iface = "Bluetooth"
+        else:
+            # Linux: parse hciconfig output as blocks per adapter
+            out = _sp.run(["hciconfig"], capture_output=True, text=True, timeout=3)
+            current_iface = None
+            for line in out.stdout.splitlines():
+                if line and not line[0].isspace() and line.startswith("hci"):
+                    current_iface = line.split(":")[0]
+                elif current_iface and "UP RUNNING" in line:
+                    bt_iface = current_iface
+                    break
+            if not bt_iface and _os.path.exists("/sys/class/bluetooth"):
+                entries = list(_os.listdir("/sys/class/bluetooth"))
+                if entries:
+                    bt_iface = entries[0]
+    except Exception:
+        pass
+
     return {
         "status": "success",
         "dongles": dongles,
@@ -1458,8 +1696,22 @@ async def get_hardware_status():
                 "connected": dongles['bluetooth'] is not None,
                 "port": dongles['bluetooth']['port'] if dongles['bluetooth'] else None,
                 "ready": dongles['bluetooth'] is not None
+            },
+            "lora": {
+                "connected": dongles['lora'] is not None,
+                "port": dongles['lora']['port'] if dongles['lora'] else None,
+                "chip": dongles['lora']['chip'] if dongles['lora'] else None,
+                "ready": dongles['lora'] is not None
+            },
+            "matter": {
+                "connected": dongles['matter'] is not None,
+                "port": dongles['matter']['port'] if dongles['matter'] else None,
+                "chip": dongles['matter']['chip'] if dongles['matter'] else None,
+                "ready": dongles['matter'] is not None
             }
         },
+        "wifi": {"connected": wifi_iface is not None, "interface": wifi_iface or "Not Detected"},
+        "bluetooth_adapter": {"connected": bt_iface is not None, "interface": bt_iface or "Not Detected"},
         "killerbee_available": check_killerbee_available(),
-        "total_connected": sum(1 for d in [dongles['zigbee'], dongles['thread'], dongles['zwave'], dongles['bluetooth']] if d is not None)
+        "total_connected": sum(1 for d in [dongles['zigbee'], dongles['thread'], dongles['zwave'], dongles['bluetooth'], dongles['lora'], dongles['matter']] if d is not None)
     }

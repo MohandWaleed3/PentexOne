@@ -136,10 +136,10 @@ def _draw_page(canvas, doc):
 async def get_dashboard_summary(db: Session = Depends(get_db)):
     """Quick dashboard statistics."""
     total = db.query(Device).count()
-    safe = db.query(Device).filter(Device.risk_level == "SAFE").count()
+    safe = db.query(Device).filter(Device.risk_level.in_(["SAFE", "LOW"])).count()
     medium = db.query(Device).filter(Device.risk_level == "MEDIUM").count()
-    risk = db.query(Device).filter(Device.risk_level == "RISK").count()
-    unknown = db.query(Device).filter(Device.risk_level == "UNKNOWN").count()
+    risk = db.query(Device).filter(Device.risk_level.in_(["RISK", "HIGH", "CRITICAL"])).count()
+    unknown = db.query(Device).filter(Device.risk_level.in_(["UNKNOWN", None])).count()
 
     return ReportSummary(
         total_devices=total,
@@ -197,6 +197,12 @@ async def generate_pdf_report(db: Session = Depends(get_db)):
                                       fontSize=9.5, leading=13,
                                       textColor=colors.HexColor("#15803d"),
                                       leftIndent=10, spaceAfter=6),
+        "SubSection": ParagraphStyle("SubSection", parent=base_styles["Heading3"],
+                                     fontSize=11, leading=14, spaceBefore=12,
+                                     spaceAfter=6, textColor=BRAND_ACCENT),
+        "VulnItem": ParagraphStyle("VulnItem", parent=base_styles["Normal"],
+                                   fontSize=9.5, leading=13, textColor=TEXT_DARK,
+                                   leftIndent=10, spaceAfter=3),
     }
 
     elements = []
@@ -211,9 +217,9 @@ async def generate_pdf_report(db: Session = Depends(get_db)):
     # ── Executive Summary as stat cards ──────────────────────
     devices = db.query(Device).order_by(Device.risk_score.desc()).all()
     total = len(devices)
-    risk_count = sum(1 for d in devices if d.risk_level == "RISK")
-    med_count = sum(1 for d in devices if d.risk_level == "MEDIUM")
-    safe_count = sum(1 for d in devices if d.risk_level == "SAFE")
+    risk_count = sum(1 for d in devices if (d.risk_level or "").upper() in ("RISK", "HIGH", "CRITICAL"))
+    med_count = sum(1 for d in devices if (d.risk_level or "").upper() == "MEDIUM")
+    safe_count = sum(1 for d in devices if (d.risk_level or "").upper() in ("SAFE", "LOW"))
     vuln_total = db.query(Vulnerability).count()
 
     summary_cards = [[
@@ -346,38 +352,75 @@ async def generate_pdf_report(db: Session = Depends(get_db)):
 
     # ── RFID Section ─────────────────────────────────────────
     from database import RFIDCard
+    import json as _json
     rfid_cards = db.query(RFIDCard).order_by(RFIDCard.last_seen.desc()).all()
     if rfid_cards:
-        elements.append(Paragraph("Access Control (RFID / NFC) Audit",
-                                  styles["Section"]))
+        elements.append(Paragraph("Access Control (RFID / NFC) Audit", styles["Section"]))
 
-        rfid_data = [["UID / Identifier", "Tag Technology", "Risk Rating"]]
+        rfid_data = [["UID / Identifier", "Tag Technology", "Encryption", "Auth Mode", "Replay Prot.", "Risk"]]
         for card in rfid_cards:
-            rfid_data.append([card.uid, card.card_type, card.risk_level])
+            rfid_data.append([
+                card.uid,
+                card.card_type or "Unknown",
+                card.encryption_type or "Unknown",
+                card.auth_mode or "Unknown",
+                card.replay_protection or "Unknown",
+                card.risk_level or "UNKNOWN",
+            ])
 
-        rt = Table(rfid_data, colWidths=[70 * mm, 55 * mm, 35 * mm], repeatRows=1)
+        rt = Table(rfid_data, colWidths=[42*mm, 32*mm, 28*mm, 25*mm, 22*mm, 16*mm], repeatRows=1)
         rt_style = TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), BRAND_ACCENT),
-            ('TEXTCOLOR',  (0, 0), (-1, 0), colors.whitesmoke),
-            ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE',   (0, 0), (-1, 0), 9),
-            ('ALIGN',      (0, 0), (-1, -1), 'LEFT'),
-            ('ALIGN',      (2, 0), (2, -1), 'CENTER'),
-            ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, 0), 7),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 7),
-            ('TOPPADDING', (0, 1), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
-            ('GRID', (0, 0), (-1, -1), 0.4, BORDER),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('BACKGROUND',    (0, 0), (-1, 0), BRAND_ACCENT),
+            ('TEXTCOLOR',     (0, 0), (-1, 0), colors.whitesmoke),
+            ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',      (0, 0), (-1, 0), 8),
+            ('ALIGN',         (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN',         (5, 0), (5, -1), 'CENTER'),
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING',    (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('GRID',          (0, 0), (-1, -1), 0.4, BORDER),
+            ('FONTSIZE',      (0, 1), (-1, -1), 8),
         ])
         for i, card in enumerate(rfid_cards, start=1):
             bg = BG_LIGHT if i % 2 == 1 else colors.white
             rt_style.add('BACKGROUND', (0, i), (-1, i), bg)
-            rt_style.add('TEXTCOLOR', (2, i), (2, i), _risk_color(card.risk_level))
-            rt_style.add('FONTNAME', (2, i), (2, i), 'Helvetica-Bold')
+            rt_style.add('TEXTCOLOR',  (5, i), (5, i), _risk_color(card.risk_level))
+            rt_style.add('FONTNAME',   (5, i), (5, i), 'Helvetica-Bold')
         rt.setStyle(rt_style)
         elements.append(rt)
+        elements.append(Spacer(1, 8))
+
+        # Vulnerabilities per RISK card
+        risk_cards = [c for c in rfid_cards if c.risk_level and c.risk_level.upper() != "SAFE"]
+        if risk_cards:
+            elements.append(Paragraph("RFID Vulnerability Details", styles["SubSection"]))
+            for card in risk_cards:
+                elements.append(Spacer(1, 4))
+                elements.append(Paragraph(
+                    f"<b>{card.uid}</b> — {card.card_type}",
+                    styles["DeviceTitle"]
+                ))
+                try:
+                    vulns = _json.loads(card.vulnerabilities_json or "[]")
+                except Exception:
+                    vulns = []
+                if vulns:
+                    for v in vulns:
+                        sev   = v.get("severity", "RISK")
+                        vtype = v.get("vuln_type", v.get("type", ""))
+                        desc  = v.get("description", "")
+                        rem   = v.get("remediation", "")
+                        sev_colors = {"CRITICAL": "#c026d3", "HIGH": "#ef4444", "MEDIUM": "#f59e0b", "LOW": "#22c55e", "SAFE": "#22c55e"}
+                        sev_hex = sev_colors.get(sev.upper(), "#ef4444")
+                        elements.append(Paragraph(
+                            f'<font color="{sev_hex}"><b>[{sev}]</b></font> {vtype}: {desc}',
+                            styles["VulnItem"]
+                        ))
+                        if rem:
+                            elements.append(Paragraph(f"↳ {rem}", styles["Remediation"]))
+                else:
+                    elements.append(Paragraph("• Vulnerable card type detected (no detailed vuln data).", styles["VulnItem"]))
 
     # ── Closing note ─────────────────────────────────────────
     elements.append(Spacer(1, 14))

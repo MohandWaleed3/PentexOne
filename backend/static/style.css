@@ -836,6 +836,89 @@ tr:hover td {
     color: var(--status-safe);
 }
 
+.badge.high {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--status-risk);
+}
+
+/* ===== AI Prioritized Action Plan ===== */
+.action-plan-panel { padding: 18px; }
+
+.action-card {
+    display: grid;
+    grid-template-columns: 44px 1fr auto;
+    gap: 14px;
+    padding: 14px;
+    margin-bottom: 10px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-left: 4px solid var(--text-muted);
+    border-radius: 10px;
+    transition: background 0.15s, transform 0.15s;
+}
+.action-card:hover { background: rgba(255,255,255,0.04); transform: translateX(2px); }
+.action-card.bucket-CRITICAL { border-left-color: #c026d3; }
+.action-card.bucket-HIGH     { border-left-color: #ef4444; }
+.action-card.bucket-MEDIUM   { border-left-color: #f59e0b; }
+.action-card.bucket-LOW      { border-left-color: #22c55e; }
+
+.action-rank {
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(168, 85, 247, 0.15);
+    color: var(--accent-purple);
+    font-weight: 700; font-size: 16px;
+    border-radius: 50%;
+}
+
+.action-body { min-width: 0; }
+.action-title {
+    font-size: 14px; font-weight: 600; color: var(--text-primary);
+    margin-bottom: 6px;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+}
+.action-meta {
+    display: flex; flex-wrap: wrap; gap: 14px;
+    font-size: 11px; color: var(--text-muted); margin-bottom: 6px;
+}
+.action-meta i { margin-right: 4px; opacity: 0.8; }
+.action-why {
+    font-size: 12px; color: var(--text-secondary);
+    margin-bottom: 8px; line-height: 1.5;
+}
+.action-steps {
+    font-size: 12px; color: var(--text-secondary);
+    margin: 4px 0 0 16px; padding: 0;
+}
+.action-steps li { margin-bottom: 3px; }
+
+.action-side {
+    display: flex; flex-direction: column;
+    align-items: flex-end; justify-content: space-between;
+    gap: 6px; min-width: 90px;
+}
+.action-effort {
+    font-size: 11px; color: var(--text-muted);
+    white-space: nowrap;
+}
+.action-reduction {
+    font-size: 13px; font-weight: 700; color: #22c55e;
+}
+
+.action-toggle-steps {
+    background: none; border: none; padding: 0;
+    color: var(--accent-purple); cursor: pointer;
+    font-size: 11px; text-decoration: underline;
+}
+.action-steps-wrap { display: none; margin-top: 8px; }
+.action-card.expanded .action-steps-wrap { display: block; }
+
+.action-plan-empty {
+    text-align: center; padding: 30px 20px;
+    color: var(--text-muted); font-size: 13px;
+}
+.action-plan-empty i { font-size: 32px; opacity: 0.4; display: block; margin-bottom: 8px; }
+
 /* ===== Device Details ===== */
 .empty-state {
     display: flex;

@@ -39,6 +39,7 @@ const app = {
         this.fetchHardwareStatus();
         this.fetchAISuggestions(); // AI suggestions on load
         this.fetchAISecurityScore(); // AI security score
+        this.fetchActionPlan(); // AI Prioritized Action Plan
         this.fetchSettings(); // Load system settings
 
         // Add auto-refresh every 5 seconds as backup
@@ -163,7 +164,7 @@ const app = {
             const data = await response.json();
 
             if (data.status === 'started') {
-                this.showToast(`Scanning ${data.network}...`, 'success');
+                this.showToast(`Network detected: ${data.network}`, 'success');
                 document.getElementById('networkInput').value = data.network;
             } else {
                 this.showToast(data.message || 'Failed to detect network', 'risk');
@@ -396,6 +397,7 @@ const app = {
         } else if (data.event === 'vulnerability_found') {
             this.showToast(`Vulnerability detected: ${data.vulnerability.vuln_type}`, 'risk');
             this.fetchDevices();
+            this.fetchActionPlan();
         } else if (data.event === 'scan_progress') {
             console.log('[Scan Progress]', data.progress + '% -', data.message);
             if (data.type === 'deep_port_scan') {
@@ -437,6 +439,7 @@ const app = {
 
                 this.fetchDevices();
                 this.fetchSummary();
+                this.fetchActionPlan();
             } catch (e) {
                 console.error('[DeepScan] Render error:', e);
             } finally {
@@ -456,6 +459,7 @@ const app = {
                 this.fetchSummary();
                 this.fetchAISuggestions();
                 this.fetchAISecurityScore();
+                this.fetchActionPlan();
             }, 2000);
         } else if (data.event === 'scan_error') {
             this.showToast(`Scan Error: ${data.message}`, 'risk');
@@ -603,10 +607,101 @@ const app = {
                 if (data.risk_count > oldRisk) {
                     this.showToast(`Critical Risk Detected! Vulnerable device discovered.`, 'risk');
                 }
+
+                // Refresh the AI action plan when device counts change
+                if (data.total_devices !== this._lastPlanDeviceCount) {
+                    this._lastPlanDeviceCount = data.total_devices;
+                    this.fetchActionPlan();
+                }
             }
         } catch (e) {
             console.error("Failed to fetch summary", e);
         }
+    },
+
+    async fetchActionPlan() {
+        const list = document.getElementById("actionPlanList");
+        const sum  = document.getElementById("actionPlanSummary");
+        if (!list) return;
+        try {
+            const res = await authFetch(`${API_BASE}/ai/action-plan?max_actions=8`);
+            if (!res.ok) {
+                list.innerHTML = `<div class="action-plan-empty"><i class="fa-solid fa-circle-exclamation"></i>Could not fetch action plan.</div>`;
+                return;
+            }
+            const data = await res.json();
+            this.renderActionPlan(data, list, sum);
+        } catch (e) {
+            console.error("Failed to fetch action plan", e);
+            list.innerHTML = `<div class="action-plan-empty"><i class="fa-solid fa-circle-exclamation"></i>Action plan unavailable.</div>`;
+        }
+    },
+
+    renderActionPlan(data, list, sumEl) {
+        const actions = data.actions || [];
+        const s = data.summary || {};
+
+        if (sumEl) {
+            sumEl.textContent = actions.length
+                ? `${actions.length} step${actions.length>1?'s':''} · ${s.estimated_total_label || '?'} total · top fix cuts ${s.first_step_reduction_pct || 0}% risk`
+                : '';
+        }
+
+        if (!actions.length) {
+            list.innerHTML = `
+                <div class="action-plan-empty">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    No vulnerabilities found — nothing to fix right now.<br>
+                    Run a Deep Port Scan or IoT scan to discover potential issues.
+                </div>`;
+            return;
+        }
+
+        const escape = (s) => String(s||'').replace(/[&<>"']/g, c =>
+            ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])
+        );
+        const sevBadge = (sev) => {
+            const cls = (sev || 'MEDIUM').toLowerCase();
+            return `<span class="badge ${cls}">${escape(sev)}</span>`;
+        };
+
+        list.innerHTML = actions.map(a => {
+            const stepsHtml = (a.steps || []).map(s => `<li>${escape(s)}</li>`).join('');
+            const devicesNote = a.affected_count > 1
+                ? `<i class="fa-solid fa-network-wired"></i>${a.affected_count} devices affected`
+                : `<i class="fa-solid fa-microchip"></i>${escape(a.affected_devices[0] || 'device')}`;
+            const portsNote = (a.ports && a.ports.length)
+                ? `<i class="fa-solid fa-plug"></i>port${a.ports.length>1?'s':''} ${a.ports.join(', ')}`
+                : '';
+            return `
+                <div class="action-card bucket-${escape(a.priority_bucket)}" data-rank="${a.rank}">
+                    <div class="action-rank">${a.rank}</div>
+                    <div class="action-body">
+                        <div class="action-title">
+                            ${escape(a.title)}
+                            ${sevBadge(a.severity)}
+                        </div>
+                        <div class="action-meta">
+                            ${devicesNote}
+                            ${portsNote}
+                            <span><i class="fa-solid fa-tag"></i>${escape(a.category)}</span>
+                        </div>
+                        <div class="action-why">${escape(a.why_it_matters)}</div>
+                        <button class="action-toggle-steps" onclick="this.closest('.action-card').classList.toggle('expanded')">
+                            Show fix steps
+                        </button>
+                        <div class="action-steps-wrap">
+                            <ol class="action-steps">${stepsHtml}</ol>
+                        </div>
+                    </div>
+                    <div class="action-side">
+                        <span class="action-effort"><i class="fa-regular fa-clock"></i> ${a.estimated_minutes} min</span>
+                        <span class="action-reduction" title="Cumulative risk reduction at this step">
+                            −${a.cumulative_reduction_pct}%
+                        </span>
+                    </div>
+                </div>`;
+        }).join('');
     },
 
      updateProtocolChart() {
@@ -773,8 +868,10 @@ const app = {
         badge.className = `risk-badge ${dev.risk_level.toLowerCase()}`;
         const riskColors = {
             'SAFE': 'var(--status-safe)',
+            'LOW': 'var(--status-safe)',
             'MEDIUM': 'var(--status-medium)',
             'RISK': 'var(--status-risk)',
+            'HIGH': 'var(--status-risk)',
             'CRITICAL': '#c026d3',
         };
         badge.style.backgroundColor = riskColors[dev.risk_level] || 'var(--status-risk)';
@@ -1314,13 +1411,23 @@ const app = {
                 if (v.severity === 'CRITICAL') icon = 'fa-skull-crossbones';
                 if (v.severity === 'LOW') icon = 'fa-circle-info';
 
+                const cveMatch = (v.vuln_type || '').match(/^CVE-\d{4}-\d+$/);
+                const isCve = !!cveMatch || !!v.cve_id;
+                const cveId = v.cve_id || (cveMatch ? cveMatch[0] : null);
+                const nvdUrl = v.reference || (cveId ? `https://nvd.nist.gov/vuln/detail/${cveId}` : null);
+
+                const titleHtml = isCve && nvdUrl
+                    ? `<i class="fa-solid ${icon}"></i> <a href="${nvdUrl}" target="_blank" rel="noopener" style="color:inherit; text-decoration:underline;">${cveId}</a>`
+                      + (v.cvss_score ? ` <span style="font-size:11px; opacity:.75;">CVSS ${v.cvss_score}</span>` : '')
+                    : `<i class="fa-solid ${icon}"></i> ${v.vuln_type}`;
+
                 card.innerHTML = `
                     <div class="vuln-header">
-                        <span class="vuln-type"><i class="fa-solid ${icon}"></i> ${v.vuln_type}</span>
+                        <span class="vuln-type">${titleHtml}</span>
                         <span class="vuln-port badge ${v.severity.toLowerCase()}">${v.severity}</span>
                     </div>
                     <div class="vuln-desc">
-                        <p><strong>Port:</strong> ${v.port} (${v.protocol || 'TCP'})</p>
+                        <p><strong>Port:</strong> ${v.port} (${v.protocol || 'TCP'})${isCve ? ' · <span style="color:#60a5fa;">NVD CVE</span>' : ''}</p>
                         <p>${v.description}</p>
                     </div>
                     ${v.remediation ? `<div class="vuln-remediation"><strong>Remediation:</strong> ${v.remediation}</div>` : ''}
@@ -1376,6 +1483,10 @@ const app = {
         } catch (e) {
             console.error("Failed to load cards report");
         }
+    },
+
+    async fetchRfidCards() {
+        return this.fetchCards();
     },
 
     renderRfidStats(data) {
@@ -1437,6 +1548,12 @@ const app = {
 
             tr.onclick = () => this.selectRfidCard(c.id);
 
+            let vulnList = [];
+            try { vulnList = JSON.parse(c.vulnerabilities_json || "[]"); } catch(e) {}
+            const vulnText = vulnList.length
+                ? vulnList.map(v => v.vuln_type || v).join(', ')
+                : '<span style="color:var(--status-safe)">None</span>';
+
             tr.innerHTML = `
                 <td>
                     <div style="font-family:monospace; font-weight:bold">${c.uid}</div>
@@ -1446,8 +1563,8 @@ const app = {
                     <div>${c.card_type}</div>
                     <div style="font-size:11px; color:var(--text-muted)"><i class="fa-solid fa-lock"></i> ${c.encryption_type || 'None'} | <i class="fa-solid fa-key"></i> ${c.auth_mode || 'UID-only'}</div>
                 </td>
-                <td><span class="badge ${c.risk_level.toLowerCase()}">${c.risk_level}</span></td>
-                <td style="font-size: 11px; max-width: 200px;">${vulns}</td>
+                <td><span class="badge ${(c.risk_level || 'safe').toLowerCase()}">${c.risk_level}</span></td>
+                <td style="font-size: 11px; max-width: 200px;">${vulnText}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -1462,15 +1579,21 @@ const app = {
     renderRfidCardDetails() {
         const lastScanCard = document.getElementById("rfidLastScanCard");
         const rfidAttackPanel = document.getElementById("rfidAttackPanel");
+        const rfidAiPanel = document.getElementById("rfidAiPanel");
+        const emptyState = document.getElementById("rfidEmptyState");
 
         if (!this.selectedRfidCard) {
+            if (emptyState) emptyState.classList.remove("hidden");
             if (lastScanCard) lastScanCard.classList.add("hidden");
             if (rfidAttackPanel) rfidAttackPanel.classList.add("hidden");
+            if (rfidAiPanel) rfidAiPanel.classList.add("hidden");
             return;
         }
 
+        if (emptyState) emptyState.classList.add("hidden");
         if (lastScanCard) lastScanCard.classList.remove("hidden");
         if (rfidAttackPanel) rfidAttackPanel.classList.remove("hidden");
+        if (rfidAiPanel) rfidAiPanel.classList.remove("hidden");
 
         const c = this.selectedRfidCard;
 
@@ -1558,15 +1681,6 @@ const app = {
     },
 
     async _doScan(url) {
-        if (!this.simulationMode) {
-            this.showToast('Enable Simulation Mode first', 'warning');
-            const status = document.getElementById("rfidStatus");
-            if (status) {
-                status.innerHTML = '<i class="fa-solid fa-lock"></i> Enable Simulation Mode first';
-                status.style.color = "var(--status-risk)";
-            }
-            return;
-        }
         const status = document.getElementById("rfidStatus");
         if (status) {
             status.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Scanning...';
@@ -1872,10 +1986,14 @@ const app = {
 
     async clearCards() {
         try {
-            await authFetch(`${API_BASE}/rfid/cards`, { method: "DELETE" });
+            await Promise.all([
+                authFetch(`${API_BASE}/rfid/cards`, { method: "DELETE" }),
+                authFetch(`${API_BASE}/rfid/reports`, { method: "DELETE" }),
+            ]);
             this.selectedRfidCard = null;
             this.fetchCards();
             this.renderRfidCardDetails();
+            this.fetchRfidReports();
         } catch (e) { }
     },
 
@@ -1889,15 +2007,14 @@ const app = {
             tbody.innerHTML = '';
             const reports = Array.isArray(data) ? data : (data.reports || []);
             if (reports.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted)">No reports yet.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted)">No reports yet.</td></tr>`;
                 return;
             }
-            const sevColor = { CRITICAL: '#c026d3', HIGH: '#ef4444', MEDIUM: '#f59e0b', LOW: '#22c55e', SAFE: '#22c55e' };
+            const sevColor = { CRITICAL: '#c026d3', HIGH: '#ef4444', MEDIUM: '#f59e0b', LOW: '#22c55e', SAFE: '#22c55e', RISK: '#ef4444' };
             reports.forEach(r => {
                 const eventLabel = r.attack_type ? `${r.attack_type} Attack` : 'RFID Scan';
-                const resultText = r.attack_result || (r.vulnerabilities ? `${JSON.parse(r.vulnerabilities).length} findings` : '-');
-                const statusText = r.attack_result ? (r.attack_result.includes('Success') ? 'Vulnerable' : 'Secure') : (r.simulation_status || 'Saved');
-                const statusColor = r.attack_result ? (r.attack_result.includes('Success') ? '#ef4444' : '#22c55e') : '#3b82f6';
+                const resultText = r.attack_result || (r.vulnerabilities ? `${JSON.parse(r.vulnerabilities || '[]').length} findings` : '-');
+                const riskColor = sevColor[r.risk_level] || '#94a3b8';
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -1905,10 +2022,8 @@ const app = {
                     <td style="font-family:monospace; font-weight:600">${r.uid || r.card_uid || '-'}</td>
                     <td>${r.card_type || '-'}</td>
                     <td><span style="padding:2px 8px; border-radius:4px; font-size:11px; background:rgba(59,130,246,0.1); color:#3b82f6">${eventLabel}</span></td>
-                    <td style="font-size:12px; color:var(--text-muted)">${resultText}</td>
-                    <td style="font-size:11px; color:var(--text-muted)">${r.remediation || '-'}</td>
-                    <td><span style="color:${sevColor[r.risk_level] || '#94a3b8'}; font-weight:600">${r.risk_level || '-'}</span></td>
-                    <td><span style="font-size:11px; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.06); color:${statusColor}">${statusText}</span></td>
+                    <td style="font-size:12px; color:var(--text-muted); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" title="${resultText}">${resultText}</td>
+                    <td><span style="color:${riskColor}; font-weight:600">${r.risk_level || '-'}</span></td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -1929,9 +2044,9 @@ const app = {
             rfid_cards: this.rfidCards,
             summary: {
                 total: this.devices.length,
-                safe: this.devices.filter(d => d.risk_level === 'SAFE').length,
+                safe: this.devices.filter(d => ['SAFE','LOW'].includes(d.risk_level)).length,
                 medium: this.devices.filter(d => d.risk_level === 'MEDIUM').length,
-                risk: this.devices.filter(d => d.risk_level === 'RISK').length
+                risk: this.devices.filter(d => ['RISK','HIGH','CRITICAL'].includes(d.risk_level)).length
             }
         };
 
@@ -2004,11 +2119,28 @@ const app = {
         const zwavePort = summary.zwave?.port || dongles.zwave?.port || '';
 
         // Bluetooth
-        const btConnected = summary.bluetooth?.connected || (dongles.bluetooth !== null && dongles.bluetooth !== undefined);
+        const btConnected = data.bluetooth_adapter?.connected || summary.bluetooth?.connected || (dongles.bluetooth !== null && dongles.bluetooth !== undefined);
+        const btIface = data.bluetooth_adapter?.interface || dongles.bluetooth?.port || 'Not Detected';
 
-        console.log(`[HW Status] Zigbee: connected=${zigbeeConnected}, port=${zigbeePort}, chip=${zigbeeChip}, ready=${zigbeeReady}`);
+        // LoRaWAN
+        const loraConnected = summary.lora?.connected || (dongles.lora !== null && dongles.lora !== undefined);
+        const loraPort = summary.lora?.port || dongles.lora?.port || '';
+
+        // Matter
+        const matterConnected = summary.matter?.connected || (dongles.matter !== null && dongles.matter !== undefined);
+        const matterPort = summary.matter?.port || dongles.matter?.port || '';
+
+        // Wi-Fi
+        const wifiConnected = data.wifi?.connected || false;
+        const wifiIface = data.wifi?.interface || 'Not Detected';
 
         let html = '<div style="display: flex; flex-wrap: wrap; gap: 10px;">';
+
+        // Wi-Fi
+        html += `<div class="hw-status-item ${wifiConnected ? 'connected' : 'disconnected'}">
+            <i class="fa-solid fa-wifi"></i>
+            <span>Wi-Fi: ${wifiConnected ? wifiIface : 'Not Detected'}</span>
+        </div>`;
 
         // Zigbee dongle
         html += `<div class="hw-status-item ${zigbeeConnected ? 'connected' : 'disconnected'}">
@@ -2028,10 +2160,22 @@ const app = {
             <span>Z-Wave: ${zwaveConnected ? zwavePort : 'Not Connected'}</span>
         </div>`;
 
+        // LoRaWAN dongle
+        html += `<div class="hw-status-item ${loraConnected ? 'connected' : 'disconnected'}">
+            <i class="fa-solid fa-usb"></i>
+            <span>LoRaWAN: ${loraConnected ? loraPort : 'Not Connected'}</span>
+        </div>`;
+
+        // Matter dongle
+        html += `<div class="hw-status-item ${matterConnected ? 'connected' : 'disconnected'}">
+            <i class="fa-solid fa-usb"></i>
+            <span>Matter: ${matterConnected ? matterPort : 'Not Connected'}</span>
+        </div>`;
+
         // Bluetooth
-        html += `<div class="hw-status-item connected">
+        html += `<div class="hw-status-item ${btConnected ? 'connected' : 'disconnected'}">
             <i class="fa-brands fa-bluetooth-b"></i>
-            <span>Bluetooth: Built-in</span>
+            <span>Bluetooth: ${btConnected ? btIface : 'Not Detected'}</span>
         </div>`;
 
         html += '</div>';
@@ -2039,10 +2183,9 @@ const app = {
     },
 
     async clearData() {
-        if (confirm("Are you sure you want to clear all discovered devices, RFID cards, and vulnerabilities?")) {
+        if (confirm("Are you sure you want to clear all discovered devices and vulnerabilities?")) {
             try {
                 await authFetch(`${API_BASE}/iot/devices`, { method: "DELETE" });
-                await authFetch(`${API_BASE}/rfid/cards`, { method: "DELETE" });
 
                 // Clear State
                 this.devices = [];

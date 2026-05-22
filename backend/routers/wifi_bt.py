@@ -6,8 +6,6 @@ import threading
 import time
 import json
 import os
-import hashlib
-import random
 from fastapi import APIRouter, Depends, BackgroundTasks, Body, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -27,7 +25,7 @@ try:
 except ImportError:
     HAS_BLEAK = False
 
-from database import get_db, Device, Vulnerability, SessionLocal, Setting
+from database import get_db, Device, Vulnerability, SessionLocal
 from models import ScanStatus
 from security_engine import calculate_risk, DEFAULT_CREDENTIALS, assess_tls_security
 from ai_engine import analyze_single_device
@@ -36,6 +34,7 @@ from routers.iot import get_hostname_enhanced, get_vendor_from_mac
 from websocket_manager import manager
 from security_assessment import SecurityAssessmentLayer
 from nmap_scanner import PentexNmapScanner
+from cve_lookup import lookup_cves_for_ports
 
 router = APIRouter(prefix="/wireless", tags=["WiFi & Bluetooth"])
 
@@ -176,20 +175,16 @@ async def run_port_scan(ip: str, db_session: Session = None):
             "message": f"Initializing scan for {ip}..."
         })
 
-        # 2. Check Mode
-        sim_setting = db.query(Setting).filter(Setting.key == "simulation_mode").first()
-        is_sim = sim_setting and sim_setting.value.lower() == "true"
-        
-        real_results = None
-        if not is_sim:
-            scanner = PentexNmapScanner()
-            manager.broadcast({
-                "event": "scan_progress", "type": "deep_port_scan",
-                "progress": 20, "message": "Executing Nmap scan..."
-            })
-            real_results = await asyncio.to_thread(scanner.scan, ip)
+        # 2. Run Nmap scan
+        scanner = PentexNmapScanner()
+        manager.broadcast({
+            "event": "scan_progress", "type": "deep_port_scan",
+            "progress": 20, "message": "Executing Nmap scan..."
+        })
+        real_results = await asyncio.to_thread(scanner.scan, ip)
 
         # 3. Data Collection
+        cve_findings = {}
         if real_results and not real_results.get("error") and real_results.get("ports"):
             logger.info(f"[Scan] Processing {len(real_results['ports'])} real ports for {ip}")
             for p_info in real_results["ports"]:
@@ -203,24 +198,68 @@ async def run_port_scan(ip: str, db_session: Session = None):
                             "id": vid, "port": p, "service": vsvc,
                             "risk_level": rlvl.upper(), "description": desc, "remediation": rem
                         })
-        elif is_sim:
-            logger.info(f"[Scan] Falling back to simulation for {ip}")
-            seed_val = int(hashlib.md5(ip.encode()).hexdigest(), 16)
-            rng = random.Random(seed_val)
-            all_possible_ports = list(SERVICES_MAP.keys())
-            num_to_pick = rng.randint(1, 4)
-            open_ports = sorted(rng.sample(all_possible_ports, num_to_pick))
-            for p in open_ports:
-                service_banners[str(p)] = rng.choice(SERVICES_MAP.get(p, ["unknown service"]))
-                if p in VULN_RULES:
-                    vid, rlvl, vsvc, desc, rem = VULN_RULES[p]
+
+            # 3.b CVE lookup from NVD for any port that has a CPE
+            manager.broadcast({
+                "event": "scan_progress", "type": "deep_port_scan",
+                "progress": 60, "message": "Querying NVD for known CVEs..."
+            })
+
+            def _cve_progress(info: dict, _ip=ip):
+                stage = info.get("stage")
+                if stage == "lookup":
+                    cur, tot = info.get("current", 0), max(info.get("total", 1), 1)
+                    pct = 60 + int(30 * (cur / tot))  # 60→90 during CVE walk
+                    manager.broadcast({
+                        "event": "scan_progress",
+                        "type": "deep_port_scan",
+                        "ip": _ip,
+                        "progress": pct,
+                        "message": f"NVD lookup {cur}/{tot} ({info.get('cpe', '?')}): {info.get('found', 0)} CVEs"
+                    })
+
+            try:
+                cve_findings = await asyncio.to_thread(
+                    lookup_cves_for_ports, real_results["ports"], _cve_progress
+                )
+            except Exception as cve_err:
+                logger.warning(f"CVE lookup failed for {ip}: {cve_err}")
+                cve_findings = {}
+
+            for port, cves in cve_findings.items():
+                svc = next(
+                    (p_info["service"] for p_info in real_results["ports"]
+                     if p_info["port"] == port), "unknown"
+                )
+                for c in cves:
                     vulnerabilities.append({
-                        "id": vid, "port": p, "service": vsvc,
-                        "risk_level": rlvl.upper(), "description": desc, "remediation": rem
+                        "id": c["cve_id"],
+                        "port": port,
+                        "service": svc,
+                        "risk_level": c["severity"],
+                        "description": f"{c['cve_id']} (CVSS {c.get('cvss_score') or 'N/A'}): {c['description']}",
+                        "remediation": f"Update {svc} to a patched version. See {c['url']}",
+                        "cve_id": c["cve_id"],
+                        "cvss_score": c.get("cvss_score"),
+                        "reference": c["url"],
                     })
         
         # 4. Persistence & Risk Analysis
         device = db.query(Device).filter(Device.ip == ip).first()
+        if not device:
+            device = Device(
+                ip=ip,
+                mac="00:00:00:00:00:00",
+                hostname=ip,
+                vendor="Unknown",
+                protocol="Wi-Fi",
+                risk_level="UNKNOWN",
+                risk_score=0.0,
+                last_seen=datetime.utcnow(),
+            )
+            db.add(device)
+            db.commit()
+            db.refresh(device)
         if device:
             device.open_ports = ",".join(map(str, open_ports))
             risk_assessment = calculate_risk(open_ports, device.protocol)
@@ -302,93 +341,246 @@ async def test_default_credentials(ip: str, background_tasks: BackgroundTasks):
     return {"status": "started", "message": f"جارٍ اختبار كلمات المرور الافتراضية على {ip}"}
 
 
+# Top default-credential pairs to actually try.
+# Kept short so the test stays fast and within reasonable lockout limits.
+TOP_DEFAULT_CREDS = [
+    ("admin", "admin"),
+    ("admin", ""),
+    ("admin", "password"),
+    ("admin", "1234"),
+    ("admin", "12345"),
+    ("root",  "root"),
+    ("root",  ""),
+    ("root",  "toor"),
+    ("user",  "user"),
+    ("support", "support"),
+]
+
+CRED_CONNECT_TIMEOUT = 3.0
+
+
+def _try_http_basic_auth(ip: str, port: int, creds: list, scheme: str = "http"):
+    """Try HTTP Basic Auth. Returns (user, pwd) on first success, else None."""
+    import requests
+    from requests.auth import HTTPBasicAuth
+    url = f"{scheme}://{ip}:{port}/"
+    # First probe: does the endpoint actually challenge for auth?
+    try:
+        probe = requests.get(url, timeout=CRED_CONNECT_TIMEOUT, verify=False, allow_redirects=False)
+    except requests.RequestException:
+        return None
+    if probe.status_code != 401 or "basic" not in probe.headers.get("WWW-Authenticate", "").lower():
+        return None  # Not a Basic Auth endpoint — can't conclude from this probe.
+    for user, pwd in creds:
+        try:
+            r = requests.get(url, auth=HTTPBasicAuth(user, pwd),
+                             timeout=CRED_CONNECT_TIMEOUT, verify=False, allow_redirects=False)
+            if r.status_code not in (401, 403):
+                return (user, pwd)
+        except requests.RequestException:
+            continue
+    return None
+
+
+def _try_ftp_auth(ip: str, port: int, creds: list):
+    """Try FTP login. Returns (user, pwd) on first success, else None."""
+    import ftplib
+    for user, pwd in creds:
+        try:
+            with ftplib.FTP() as f:
+                f.connect(ip, port, timeout=CRED_CONNECT_TIMEOUT)
+                f.login(user, pwd)
+                return (user, pwd)
+        except ftplib.error_perm:
+            continue
+        except (OSError, ftplib.all_errors):
+            return None
+    return None
+
+
+def _try_ssh_auth(ip: str, port: int, creds: list):
+    """Try SSH login via paramiko if installed. Returns (user, pwd) on success."""
+    try:
+        import paramiko
+    except ImportError:
+        return None
+    for user, pwd in creds:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            client.connect(ip, port=port, username=user, password=pwd,
+                           timeout=CRED_CONNECT_TIMEOUT, allow_agent=False,
+                           look_for_keys=False, banner_timeout=CRED_CONNECT_TIMEOUT)
+            client.close()
+            return (user, pwd)
+        except paramiko.AuthenticationException:
+            continue
+        except Exception:
+            try:
+                client.close()
+            except Exception:
+                pass
+            return None
+    return None
+
+
 async def run_credential_test(ip: str):
-    """يختبر كلمات المرور الافتراضية بطريقة غير معطلة"""
+    """Tests common default credentials against services actually exposed by the device.
+
+    Strategy:
+      1. Read the device's known open ports from DB (populated by an earlier port scan).
+      2. For each auth-bearing service present, attempt a short list of common creds.
+      3. Only report a vulnerability on an actual successful authentication response.
+    """
     db = SessionLocal()
     found_cred = None
-    
+    found_service = None
+    found_port = None
+
     try:
         manager.broadcast({
-            "event": "scan_start",
-            "type": "cred_test",
-            "ip": ip,
+            "event": "scan_start", "type": "cred_test", "ip": ip,
             "message": f"Testing default credentials for {ip}..."
         })
-
         manager.broadcast({
             "event": "cred_test_start",
-            "attack_type": "Credential Testing",
-            "target_uid": ip
+            "attack_type": "Credential Testing", "target_uid": ip
         })
-        await asyncio.sleep(1)
 
-        sim_creds = [
-            ("admin", "admin"),
-            ("root", "root"),
-            ("admin", "password123"),
-            ("admin", "1234"),
-            ("root", "123456")
-        ]
+        device = db.query(Device).filter(Device.ip == ip).first()
+        ports_list = []
+        if device and device.open_ports:
+            ports_list = [int(p) for p in device.open_ports.split(",") if p.isdigit()]
 
-        # Determine success dynamically based on random roll
-        # Give a 40% chance to find weak credentials
-        is_vulnerable = random.randint(1, 100) <= 40
-        found_cred = None
-
-        if is_vulnerable:
-            found_cred = random.choice(sim_creds)
-
-        for user, pwd in sim_creds:
+        if not ports_list:
             manager.broadcast({
                 "event": "cred_test_log",
-                "log_line": f"[+] Testing {user}/{pwd}"
+                "log_line": "[!] No open ports on record — run a port scan first."
             })
-            await asyncio.sleep(0.8)
-            
-            if found_cred and found_cred == (user, pwd):
+            manager.broadcast({
+                "event": "cred_test_complete", "success": False,
+                "remediation": "Run a deep port scan before credential testing."
+            })
+            return
+
+        # Map open ports to probe functions.
+        # (port_to_check, service_label, probe_callable)
+        probes = []
+        for p in ports_list:
+            if p == 22:
+                probes.append((p, "SSH",   lambda ip=ip, p=p: _try_ssh_auth(ip, p, TOP_DEFAULT_CREDS)))
+            elif p == 21:
+                probes.append((p, "FTP",   lambda ip=ip, p=p: _try_ftp_auth(ip, p, TOP_DEFAULT_CREDS)))
+            elif p in (80, 8080, 8081, 8888):
+                probes.append((p, "HTTP",  lambda ip=ip, p=p: _try_http_basic_auth(ip, p, TOP_DEFAULT_CREDS, "http")))
+            elif p in (443, 8443):
+                probes.append((p, "HTTPS", lambda ip=ip, p=p: _try_http_basic_auth(ip, p, TOP_DEFAULT_CREDS, "https")))
+
+        if not probes:
+            manager.broadcast({
+                "event": "cred_test_log",
+                "log_line": "[i] No auth-bearing services (SSH/FTP/HTTP) detected on this host."
+            })
+            manager.broadcast({
+                "event": "cred_test_complete", "success": False,
+                "remediation": "No login services exposed — credential reuse N/A on this host."
+            })
+            return
+
+        # Suppress urllib3 InsecureRequestWarning since we intentionally hit unverified TLS.
+        try:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except Exception:
+            pass
+
+        # Run all service probes concurrently. The bottleneck per probe is
+        # connect/auth latency, not CPU, so threads + asyncio.gather is ideal.
+        manager.broadcast({
+            "event": "cred_test_log",
+            "log_line": f"[+] Probing {len(probes)} service(s) in parallel: "
+                        + ", ".join(f"{s}:{p}" for p, s, _ in probes)
+        })
+
+        async def _run(port, service, probe):
+            result = await asyncio.to_thread(probe)
+            return port, service, result
+
+        results = await asyncio.gather(
+            *[_run(p, s, fn) for p, s, fn in probes],
+            return_exceptions=True,
+        )
+
+        for r in results:
+            if isinstance(r, Exception):
                 manager.broadcast({
                     "event": "cred_test_log",
-                    "log_line": f"[!] Weak credentials detected!"
+                    "log_line": f"[!] probe error: {r}"
                 })
-                break
+                continue
+            port, service, result = r
+            if result:
+                if not found_cred:
+                    found_cred = result
+                    found_service = service
+                    found_port = port
+                manager.broadcast({
+                    "event": "cred_test_log",
+                    "log_line": f"[!] {service}:{port} accepted {result[0]}/{result[1]}"
+                })
             else:
                 manager.broadcast({
                     "event": "cred_test_log",
-                    "log_line": f"[-] Failed"
+                    "log_line": f"[-] {service}:{port} — no default credentials worked"
                 })
 
-        # ---- تحديث قاعدة البيانات ----
-        if found_cred:
-            device = db.query(Device).filter(Device.ip == ip).first()
-            if device:
-                ports_list = [int(p) for p in device.open_ports.split(",") if p.isdigit()] if device.open_ports else []
-                risk_result = calculate_risk(ports_list, device.protocol, {"default_creds": found_cred})
-                device.risk_level = risk_result["risk_level"]
-                device.risk_score = risk_result["risk_score"]
-                
-                # إضافة ثغرة كلمات المرور الافتراضية إذا لم تكن موجودة
-                existing_vuln = db.query(Vulnerability).filter(
-                    Vulnerability.device_id == device.id,
-                    Vulnerability.vuln_type == "DEFAULT_CREDENTIALS"
-                ).first()
-                if not existing_vuln:
-                    db.add(Vulnerability(
-                        device_id=device.id,
-                        vuln_type="DEFAULT_CREDENTIALS",
-                        severity="CRITICAL",
-                        description=f"Default credentials '{found_cred[0]}/{found_cred[1]}' work on the device!",
-                        protocol="HTTP/Telnet"
-                    ))
-                db.commit()
+        if found_cred and device:
+            risk_result = calculate_risk(ports_list, device.protocol, {"default_creds": found_cred})
+            device.risk_level = risk_result["risk_level"]
+            device.risk_score = risk_result["risk_score"]
+
+            existing_vuln = db.query(Vulnerability).filter(
+                Vulnerability.device_id == device.id,
+                Vulnerability.vuln_type == "DEFAULT_CREDENTIALS"
+            ).first()
+            description = (
+                f"Default credentials '{found_cred[0]}/{found_cred[1]}' authenticated "
+                f"against {found_service} on port {found_port}."
+            )
+            if existing_vuln:
+                existing_vuln.description = description
+                existing_vuln.severity = "CRITICAL"
+                existing_vuln.port = found_port
+                existing_vuln.protocol = found_service
+            else:
+                db.add(Vulnerability(
+                    device_id=device.id,
+                    vuln_type="DEFAULT_CREDENTIALS",
+                    severity="CRITICAL",
+                    description=description,
+                    port=found_port,
+                    protocol=found_service,
+                ))
+            db.commit()
 
         manager.broadcast({
             "event": "cred_test_complete",
             "success": bool(found_cred),
-            "remediation": "Change default passwords immediately and enforce strong password policies." if found_cred else "Credentials appear secure."
+            "service": found_service,
+            "port": found_port,
+            "remediation": (
+                "Change default passwords immediately and enforce strong password policies."
+                if found_cred else
+                "No default credentials accepted on tested services."
+            )
         })
 
     except Exception as e:
         logger.error(f"Credential test error: {e}")
+        manager.broadcast({
+            "event": "cred_test_complete", "success": False,
+            "remediation": f"Credential test failed: {e}"
+        })
     finally:
         db.close()
 
@@ -530,80 +722,13 @@ async def scan_nearby_ssids(db: Session = Depends(get_db)):
             except Exception as e:
                 logger.error(f"CoreWLAN scan failed: {e}")
             
-            # Method 2: Use system_profiler (SSIDs may be redacted on newer macOS)
-            if not networks:
-                try:
-                    result = subprocess.run(
-                        ["/usr/sbin/system_profiler", "SPAirPortDataType"],
-                        capture_output=True, text=True, timeout=20
-                    )
-                    
-                    output = result.stdout
-                    lines = output.split("\n")
-                    in_networks_section = False
-                    current_ssid = None
-                    
-                    for i, line in enumerate(lines):
-                        line_stripped = line.strip()
-                        
-                        # Check for network sections
-                        if "Other Local Wi-Fi Networks:" in line:
-                            in_networks_section = True
-                            continue
-                        elif "Current Network Information:" in line:
-                            # Extract current network SSID
-                            in_networks_section = True
-                            # Next line after this contains the SSID
-                            if i + 1 < len(lines):
-                                next_line = lines[i + 1].strip()
-                                if next_line.endswith(":"):
-                                    current_ssid = next_line[:-1]
-                                    if current_ssid and current_ssid != "<redacted>":
-                                        networks.append({
-                                            "ssid": current_ssid,
-                                            "rssi": "N/A",
-                                            "security": "Unknown",
-                                            "channel": "Unknown",
-                                            "status": "Connected"
-                                        })
-                            continue
-                        elif in_networks_section and line_stripped and not line.startswith(" "):
-                            in_networks_section = False
-                            continue
-                        
-                        if in_networks_section and line_stripped:
-                            # Check for SSID lines (usually end with : and contain network name)
-                            if line_stripped.endswith(":") and len(line_stripped) > 1:
-                                ssid_name = line_stripped[:-1]
-                                # Skip redacted SSIDs and headers
-                                if ssid_name and ssid_name != "SSID" and ssid_name != "<redacted>":
-                                    current_ssid = ssid_name
-                                    networks.append({
-                                        "ssid": ssid_name,
-                                        "rssi": "N/A",
-                                        "security": "Unknown",
-                                        "channel": "Unknown"
-                                    })
-                            elif ":" in line_stripped and networks:
-                                # Parse details
-                                parts = line_stripped.split(":", 1)
-                                if len(parts) == 2:
-                                    key = parts[0].strip()
-                                    val = parts[1].strip()
-                                    
-                                    if "Security" in key:
-                                        networks[-1]["security"] = val
-                                    elif "Channel" in key:
-                                        networks[-1]["channel"] = val.split()[0] if val else "Unknown"
-                                    elif "Signal" in key or "Noise" in key:
-                                        rssi_match = re.search(r'(-\d+)', val)
-                                        if rssi_match:
-                                            networks[-1]["rssi"] = int(rssi_match.group(1))
-                
-                except Exception as e:
-                    logger.error(f"System profiler scan failed: {e}")
-            
-            # Method 3: Get current network info
+            # NOTE: We deliberately skip `system_profiler SPAirPortDataType`
+            # here. On macOS 14+ SSIDs come back as `<redacted>` for privacy,
+            # so the call takes ~20 s and returns nothing usable. CoreWLAN
+            # (above) is the only path that returns real data, and
+            # networksetup (below) at least gives the current SSID in <1 s.
+
+            # Method 2 (was 3): Get current network info — fast fallback
             if not networks:
                 try:
                     # Get current connection info

@@ -161,7 +161,16 @@ def generate_mock_rfid_card():
         return ":".join([f"{random.randint(0, 255):02X}" for _ in range(length)])
 
     profile = random.choice(CARD_PROFILES)
-    vulns = list(profile["known_vulns"])
+    vulns = []
+    for kv in profile["known_vulns"]:
+        if "Default Keys" in kv:
+            vulns.append({"vuln_type": "RFID_CLONING_ATTACK", "severity": "CRITICAL", "description": kv})
+        elif "Crypto1" in kv or "DES" in kv:
+            vulns.append({"vuln_type": "RFID_UNAUTHORIZED_ACCESS", "severity": "HIGH", "description": kv})
+        elif "Easily" in kv or "Loclass" in kv:
+            vulns.append({"vuln_type": "RFID_CLONING_ATTACK", "severity": "HIGH", "description": kv})
+        else:
+            vulns.append({"vuln_type": "RFID_TAG_TAMPERING", "severity": "MEDIUM", "description": kv})
     
     # Randomize sectors slightly based on type
     sectors = profile["data_sectors"]
@@ -175,7 +184,7 @@ def generate_mock_rfid_card():
     # Override risk if integrity is bad
     risk_level = profile["base_risk"]
     if tag_integrity != "Valid":
-        vulns.append(f"Tag Integrity Error: {tag_integrity}")
+        vulns.append({"vuln_type": "RFID_TAG_TAMPERING", "severity": "HIGH", "description": f"Tag Integrity Error: {tag_integrity}"})
         risk_level = "RISK"
 
     # Dynamic risk score with some jitter
@@ -225,7 +234,7 @@ def _real_rfid_read():
                     "tag_integrity": "Unknown",
                     "risk_level": "RISK",
                     "risk_score": 70.0,
-                    "vulnerabilities": ["RFID_EASILY_CLONABLE"],
+                    "vulnerabilities": [{"vuln_type": "RFID_CLONING_ATTACK", "severity": "HIGH", "description": "Card relies solely on UID without encryption (Easily clonable)"}],
                     "data_sectors": 0,
                     "simulation_status": "Real",
                 }
@@ -248,23 +257,14 @@ def _build_attack_logs(attack_type: str, uid: str, card_type: str,
             key_crack_step = f"KEY CRACKED — Default key FFFFFFFFFFFF accepted on sector 0"
         else:
             key_crack_step = f"Encryption: {encryption_type} — Attempting known-plaintext attack...\n  [SUCCESS] Key recovered."
-        result_line = f" [COMPROMISED] ⚠ ATTACK SUCCESS — CARD IS VULNERABLE"
-    elif success_level == "Partial":
-        key_crack_step = f"Encryption: {encryption_type} — Partial bypass achieved.\n  [WARNING] Recovered limited data sectors."
-        result_line = f" [WARNING] ⚠ ATTACK PARTIAL — PARTIAL COMPROMISE"
+        result_line = f"SUCCESS — {attack_type} simulation completed. Data extracted."
     else:
-        # Realistic brute-force failure sequence for protected cards
-        key_crack_step = (
-            f"Attempting brute-force on {encryption_type}...\n"
-            f"  [TRY] Key: 4D6966617265...\n"
-            f"  [TRY] Key: 536563757265...\n"
-            f"  [FAIL] Brute-force failed — AES-128 hardware protection active."
-        )
-        result_line = f" [SAFE] ✓ ATTACK FAILED — CARD IS SECURE"
+        key_crack_step = f"Attempting known key dictionary attack...\n  [FAILED] All keys exhausted."
+        result_line = f"FAILED — Access Denied. Sector write-protection/integrity block."
 
     logs = []
-    for tmpl in templates:
-        line = tmpl.format(
+    for line in templates:
+        line = line.format(
             uid=uid,
             card_type=card_type,
             encryption_type=encryption_type,
@@ -294,9 +294,11 @@ async def scan_rfid(db: Session = Depends(get_db)):
     is_sim = sim_setting and sim_setting.value.lower() == "true"
 
     if not is_sim:
-        return {"status": "error", "message": "RFID scanning is currently restricted to Simulation Mode. Please enable Simulation Mode in the dashboard settings to proceed."}
-    
-    card_data = _simulate_rfid_read()
+        card_data = _real_rfid_read()
+        if not card_data:
+            return {"status": "error", "message": "RFID scanning is currently restricted to Simulation Mode, and no real RFID reader was detected. Please connect a reader or enable Simulation Mode in the settings."}
+    else:
+        card_data = _simulate_rfid_read()
 
     vulns_json = json.dumps(card_data["vulnerabilities"])
 
