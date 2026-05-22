@@ -12,6 +12,9 @@ bleak>=0.21.1
 pyserial>=3.5
 cryptography>=41.0.0
 passlib[bcrypt]>=1.7.4
+requests>=2.31.0
+urllib3>=2.0.0
+paramiko>=3.4.0          # real SSH credential testing in wifi_bt.py
 
 # Optional hardware support (commented out for Python 3.13 compatibility)
 # killerbee>=1.9.0  # Zigbee sniffing - install separately if needed
