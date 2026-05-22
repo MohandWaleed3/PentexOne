@@ -248,6 +248,74 @@ sudo systemctl disable avahi-daemon  # لو مش محتاج mDNS
 
 ---
 
+## CVE Database Setup (NVD Offline Feeds)
+
+### لماذا Offline Feeds؟
+- ❌ NVD REST API: بطيء (6.5s/request)، تحدود معدل (6 CPEs بدون key، 30 مع key)، blocked by Cloudflare في بعض الدول
+- ✅ Offline Feeds: فوري (0ms)، بدون حدود معدل، يعمل بدون internet بعد التحميل الأولي
+
+### تحميل Feeds (لأول مرة)
+```bash
+cd ~/pentexone/backend
+chmod +x scripts/download_nvd_feeds.sh
+
+# تحميل آخر 6 سنوات من CVE data (~500MB، 5-10 دقائق على Pi 5)
+./scripts/download_nvd_feeds.sh
+
+# أو حدد نطاق سنوات محدد
+./scripts/download_nvd_feeds.sh 2022 2026
+```
+
+**ملاحظة**: البرنامج سيستخدم online API كـ fallback إذا لم توجد offline feeds. لفرض offline-only، اضبط المتغير:
+```bash
+export PENTEX_NVD_OFFLINE_ONLY=1
+```
+
+### Offline Index في الذاكرة
+- يُبنى تلقائياً عند startup من `backend/nvd_offline/`
+- يُخزن في memory (lookup = 1-2ms)
+- يتضمن: CVE IDs، affected products/versions، CVSS scores
+
+### كم CVE نقدر نشيك في scan واحد؟
+- **بدون NVD API Key**: 8 CPEs كحد أقصى (يحمي من rate limit NVD)
+- **مع NVD API Key**: 30 CPEs (fallback أسرع للـ rare products)
+- ملاحظة: معظم smart home devices بتستخدم 1-3 CPEs فقط
+
+---
+
+## متغيرات البيئة (Environment Variables)
+
+اضبط في `.env` أو عن طريق `export`:
+
+### PENTEX_NMAP_MIN_RATE (default: 1000)
+Nmap packet rate. قلل على Pi 3 أو WiFi ضعيف:
+```bash
+# Pi 3 مع WiFi ضعيف
+PENTEX_NMAP_MIN_RATE=500
+
+# Pi 5 مع Ethernet (أسرع)
+PENTEX_NMAP_MIN_RATE=2000
+
+# Network مشغول
+PENTEX_NMAP_MIN_RATE=100
+```
+
+### NVD_API_KEY (optional)
+NVD API key يرفع limit من 8 → 30 CPEs + يسرع fallback. احصل عليه:
+https://nvd.nist.gov/developers/request-an-api-key
+
+```bash
+export NVD_API_KEY=your_api_key_here
+```
+
+### PENTEX_NVD_OFFLINE_ONLY (optional)
+فرض offline lookup بدون fallback:
+```bash
+export PENTEX_NVD_OFFLINE_ONLY=1
+```
+
+---
+
 ## حماية النظام
 
 ### تغيير الـ Default Credentials
