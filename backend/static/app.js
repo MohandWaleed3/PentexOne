@@ -1404,14 +1404,18 @@ const app = {
             contentDiv.appendChild(vulnSection);
 
             vulnerabilities.forEach(v => {
+                // handle both field-name conventions from backend
+                const severity = (v.severity || v.risk_level || 'MEDIUM').toUpperCase();
+                const vulnType = v.vuln_type || v.id || 'UNKNOWN';
+
                 const card = document.createElement('div');
-                card.className = `vuln-item ${v.severity.toUpperCase()}`;
+                card.className = `vuln-item ${severity}`;
 
                 let icon = 'fa-triangle-exclamation';
-                if (v.severity === 'CRITICAL') icon = 'fa-skull-crossbones';
-                if (v.severity === 'LOW') icon = 'fa-circle-info';
+                if (severity === 'CRITICAL') icon = 'fa-skull-crossbones';
+                if (severity === 'LOW') icon = 'fa-circle-info';
 
-                const cveMatch = (v.vuln_type || '').match(/^CVE-\d{4}-\d+$/);
+                const cveMatch = vulnType.match(/^CVE-\d{4}-\d+$/);
                 const isCve = !!cveMatch || !!v.cve_id;
                 const cveId = v.cve_id || (cveMatch ? cveMatch[0] : null);
                 const nvdUrl = v.reference || (cveId ? `https://nvd.nist.gov/vuln/detail/${cveId}` : null);
@@ -1419,12 +1423,12 @@ const app = {
                 const titleHtml = isCve && nvdUrl
                     ? `<i class="fa-solid ${icon}"></i> <a href="${nvdUrl}" target="_blank" rel="noopener" style="color:inherit; text-decoration:underline;">${cveId}</a>`
                       + (v.cvss_score ? ` <span style="font-size:11px; opacity:.75;">CVSS ${v.cvss_score}</span>` : '')
-                    : `<i class="fa-solid ${icon}"></i> ${v.vuln_type}`;
+                    : `<i class="fa-solid ${icon}"></i> ${vulnType}`;
 
                 card.innerHTML = `
                     <div class="vuln-header">
                         <span class="vuln-type">${titleHtml}</span>
-                        <span class="vuln-port badge ${v.severity.toLowerCase()}">${v.severity}</span>
+                        <span class="vuln-port badge ${severity.toLowerCase()}">${severity}</span>
                     </div>
                     <div class="vuln-desc">
                         <p><strong>Port:</strong> ${v.port} (${v.protocol || 'TCP'})${isCve ? ' · <span style="color:#60a5fa;">NVD CVE</span>' : ''}</p>
