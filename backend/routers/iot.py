@@ -503,6 +503,7 @@ async def discover_networks():
                             f"[discover] {network} on {current_iface} ({iface_type})")
 
         else:  # Linux
+            _VIRT_IFACE = ("docker", "br-", "veth", "virbr", "lxc", "lxd", "lo")
             result = subprocess.run(
                 ["ip", "route", "show"], capture_output=True, text=True, timeout=5
             )
@@ -515,6 +516,8 @@ async def discover_networks():
                             continue
                         iface_m = re.search(r'dev (\S+)', line)
                         iface = iface_m.group(1) if iface_m else "unknown"
+                        if any(iface.startswith(p) for p in _VIRT_IFACE):
+                            continue
                         networks.append({
                             "network": network,
                             "interface": iface,

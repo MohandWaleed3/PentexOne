@@ -1055,11 +1055,16 @@ async def quick_discover_devices(background_tasks: BackgroundTasks, db: Session 
                         network = f"{parts[0]}.{parts[1]}.{parts[2]}.0/{cidr}"
                         break
         else:  # Linux
+            _VIRT_IFACE = ("docker", "br-", "veth", "virbr", "lxc", "lxd", "lo")
             result = subprocess.run(["ip", "route", "show"], capture_output=True, text=True, timeout=5)
             for line in result.stdout.split("\n"):
                 if "dev" in line and "/" in line and not line.startswith("127"):
                     match = re.search(r'(\d+\.\d+\.\d+\.\d+/\d+)', line)
-                    if match:
+                    iface_m = re.search(r'dev (\S+)', line)
+                    if match and iface_m:
+                        iface = iface_m.group(1)
+                        if any(iface.startswith(p) for p in _VIRT_IFACE):
+                            continue
                         network = match.group(1)
                         break
     except Exception as e:
