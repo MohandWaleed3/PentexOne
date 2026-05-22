@@ -252,7 +252,7 @@ def detect_all_dongles() -> dict:
                 'manufacturer': port.manufacturer or 'Unknown',
                 'status': 'CONNECTED ✅'
             }
-            logger.info(
+            logger.debug(
                 f"✅ DETECTED: Zigbee Dongle ({dongles['zigbee']['chip']}) on {port.device}")
 
         # Detect Thread/Matter dongles
@@ -279,7 +279,7 @@ def detect_all_dongles() -> dict:
                 'manufacturer': port.manufacturer or 'Aeotec',
                 'status': 'CONNECTED ✅'
             }
-            logger.info(f"✅ DETECTED: Z-Wave Dongle on {port.device}")
+            logger.debug(f"✅ DETECTED: Z-Wave Dongle on {port.device}")
 
         # Detect Bluetooth dongles
         if any(x in desc_upper or x in hwid_upper for x in ['BLUETOOTH', 'CSR', 'BROADCOM', 'INTEL BT']):
@@ -291,7 +291,7 @@ def detect_all_dongles() -> dict:
                 'manufacturer': port.manufacturer or 'Unknown',
                 'status': 'CONNECTED ✅'
             }
-            logger.info(f"✅ DETECTED: Bluetooth Adapter on {port.device}")
+            logger.debug(f"✅ DETECTED: Bluetooth Adapter on {port.device}")
 
         # Add to other serials if not detected as known dongle
         if not any([dongles['zigbee'] and dongles['zigbee']['port'] == port.device,

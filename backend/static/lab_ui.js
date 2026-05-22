@@ -566,11 +566,16 @@ const lab = (function () {
 
   // ─── Stats Bar ───────────────────────────────────────────────────────────────
 
+  // Clock skew between server and browser (server_time_ms - browser_time_ms),
+  // refreshed every fetchStats() so relative times match server reality.
+  let _serverSkewMs = 0;
+
   function formatRelativeTime(iso) {
     if (!iso) return '—';
     const then = new Date(iso.replace(' ', 'T') + (iso.endsWith('Z') ? '' : 'Z'));
-    const diff = Math.floor((Date.now() - then.getTime()) / 1000);
+    let diff = Math.floor((Date.now() + _serverSkewMs - then.getTime()) / 1000);
     if (isNaN(diff)) return '—';
+    if (diff < 0)    diff = 0;
     if (diff < 5)    return 'just now';
     if (diff < 60)   return `${diff}s ago`;
     if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
@@ -582,9 +587,8 @@ const lab = (function () {
 
   async function fetchStats() {
     try {
-      const [devicesResp, statsResp, activityResp] = await Promise.all([
+      const [devicesResp, activityResp] = await Promise.all([
         api('GET', '/iot/devices').catch(() => null),
-        api('GET', '/lab/activity/stats').catch(() => null),
         api('GET', '/lab/activity?limit=1').catch(() => null),
       ]);
 
@@ -596,20 +600,21 @@ const lab = (function () {
         return acc + vulns.filter(v => (v.severity || '').toUpperCase() === 'CRITICAL').length;
       }, 0);
 
-      const byEvent = (statsResp && statsResp.stats && statsResp.stats.by_event) || {};
-      const attackCount = byEvent.ATTACK_SIMULATED || 0;
-
       const lastTs = activityResp && activityResp.entries && activityResp.entries[0]
                      ? activityResp.entries[0].timestamp : null;
       _lastActivityTs = lastTs;
 
+      // Re-sync clock skew with server (handles browser/server clock mismatch)
+      if (activityResp && activityResp.server_time) {
+        const serverNow = new Date(activityResp.server_time).getTime();
+        if (!isNaN(serverNow)) _serverSkewMs = serverNow - Date.now();
+      }
+
       const dEl = el('statDeviceCount');
       const cEl = el('statCriticalCount');
-      const eEl = el('statExploitCount');
       const lEl = el('statLastActivity');
       if (dEl) dEl.textContent = devices.length;
       if (cEl) cEl.textContent = critical;
-      if (eEl) eEl.textContent = attackCount;
       if (lEl) lEl.textContent = formatRelativeTime(lastTs);
     } catch (_) {}
   }
@@ -778,3 +783,5 @@ const lab = (function () {
     openTutorial, closeTutorial,
   };
 })();
+
+window.lab = lab;

@@ -40,14 +40,14 @@ TV_STATE = {
 MAIN_PAGE = """<!DOCTYPE html>
 <html><head><title>Samsung Smart TV</title>
 <style>
-body { font-family: 'Segoe UI'; background: #000; color: #fff; margin: 0; padding: 0; }
-.header { background: linear-gradient(135deg, #1428a0, #006eb6); padding: 30px; text-align: center; }
-.container { max-width: 700px; margin: 30px auto; padding: 20px; }
-.tv-screen { background: #1a1a1a; border: 4px solid #333; padding: 60px 20px; text-align: center; border-radius: 8px; }
-.app { background: #1428a0; padding: 12px 20px; display: inline-block; border-radius: 4px; margin: 5px; }
-.info { background: #1a1a1a; padding: 20px; margin-top: 20px; border-radius: 8px; }
-.row { padding: 6px 0; border-bottom: 1px solid #222; }
-.warn { background: #2a1a00; border-left: 3px solid #ff8800; padding: 10px; font-size: 11px; margin-top: 20px; }
+body {{ font-family: 'Segoe UI'; background: #000; color: #fff; margin: 0; padding: 0; }}
+.header {{ background: linear-gradient(135deg, #1428a0, #006eb6); padding: 30px; text-align: center; }}
+.container {{ max-width: 700px; margin: 30px auto; padding: 20px; }}
+.tv-screen {{ background: #1a1a1a; border: 4px solid #333; padding: 60px 20px; text-align: center; border-radius: 8px; }}
+.app {{ background: #1428a0; padding: 12px 20px; display: inline-block; border-radius: 4px; margin: 5px; }}
+.info {{ background: #1a1a1a; padding: 20px; margin-top: 20px; border-radius: 8px; }}
+.row {{ padding: 6px 0; border-bottom: 1px solid #222; }}
+.warn {{ background: #2a1a00; border-left: 3px solid #ff8800; padding: 10px; font-size: 11px; margin-top: 20px; }}
 </style></head>
 <body>
 <div class="header"><h1>SAMSUNG</h1><p>Smart TV — Guest Mode</p></div>

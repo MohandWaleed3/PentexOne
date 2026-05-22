@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=6">
 </head>
 
 <body>
@@ -29,8 +29,7 @@
         <!-- Sidebar Navigation -->
         <nav class="sidebar" id="sidebar">
             <div class="brand">
-                <i class="fa-solid fa-shield-halved neon-icon"></i>
-                <h2>Pentex One</h2>
+                <img src="logo.png" alt="PenteX-One" class="brand-logo">
             </div>
             <ul class="nav-links">
                 <li id="nav-dashboard" class="active"><a href="#" onclick="app.switchView('dashboard')"><i
@@ -50,7 +49,7 @@
             <!-- Header -->
             <header class="top-nav">
                 <div class="title-area">
-                    <h1 id="pageTitle">IoT Security Auditor</h1>
+                    <h1 id="pageTitle" class="page-title">Dashboard</h1>
                     <p class="subtitle" id="pageSubtitle">Monitor and secure your connected smart home environment</p>
                 </div>
                 <div class="actions" style="display: flex; align-items: center; gap: 15px;">
@@ -161,7 +160,7 @@
                         </div>
                     </div>
                     <div class="stat-card glass-panel safe">
-                        <div class="stat-icon"><i class="fa-solid fa-shield-check"></i></div>
+                        <div class="stat-icon"><i class="fa-solid fa-shield-halved"></i></div>
                         <div class="stat-info">
                             <h3>Secure (SAFE)</h3>
                             <h2 id="sSafe">0</h2>
@@ -301,7 +300,18 @@
                                 <button class="btn btn-outline-blue w-half" onclick="app.deepScanDevice()">Deep Port Scan</button>
                                 <button class="btn btn-outline-red w-half" onclick="app.testCreds()">Test Default Creds</button>
                             </div>
-                            
+
+                            <!-- AI Analysis (always visible) -->
+                            <button class="ai-analysis-btn full-width" onclick="app.analyzeDeviceAI()" style="margin-top: 12px;">
+                                <i class="fa-solid fa-brain"></i> PROCESS AI ANALYSIS
+                            </button>
+
+                            <div id="aiDeviceAnalysis" class="hidden" style="margin-top: 15px; padding: 16px; background: rgba(139, 92, 246, 0.05); border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 12px;">
+                                <div id="aiDeviceType" style="margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 8px;"></div>
+                                <div id="aiDynamicSummary" style="font-size: 13px; color: var(--text-color); line-height: 1.6; margin-bottom: 12px; font-style: italic;"></div>
+                                <div id="aiPredictedVulns"></div>
+                            </div>
+
                             <!-- Dynamic Credential Testing Terminal -->
                             <div id="credTestPanel" class="hidden" style="margin-top: 15px;">
                                 <div id="credTestConsole" class="terminal-emulator">
@@ -332,17 +342,6 @@
 
                                 <div id="deepScanContent" class="vuln-list" style="margin-top: 20px;">
                                     <!-- Vulnerability Cards will be injected here -->
-                                </div>
-                                
-                                <button class="ai-analysis-btn full-width" onclick="app.analyzeDeviceAI()">
-                                    <i class="fa-solid fa-brain"></i> PROCESS AI ANALYSIS
-                                </button>
-
-                                <!-- AI Analysis Result Container -->
-                                <div id="aiDeviceAnalysis" class="hidden" style="margin-top: 15px; padding: 16px; background: rgba(139, 92, 246, 0.05); border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 12px;">
-                                    <div id="aiDeviceType" style="margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 8px;"></div>
-                                    <div id="aiDynamicSummary" style="font-size: 13px; color: var(--text-color); line-height: 1.6; margin-bottom: 12px; font-style: italic;"></div>
-                                    <div id="aiPredictedVulns"></div>
                                 </div>
                             </div>
                         </div>
@@ -569,7 +568,7 @@
                 <div class="glass-panel" style="margin-bottom:20px;">
                     <div class="panel-header">
                         <h3><i class="fa-solid fa-diagram-project" style="color:#60a5fa;"></i> Network Architecture</h3>
-                        <button class="btn btn-icon" onclick="lab.fetchArchitecture()"><i class="fa-solid fa-rotate-right"></i></button>
+                        <button class="btn btn-icon" id="toggleArchBtn" onclick="labTogglePanel('subnetGrid','toggleArchBtn','fetchArchitecture')" title="Show / Hide"><i class="fa-solid fa-eye"></i></button>
                     </div>
                     <div class="subnet-grid" id="subnetGrid">
                         <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Loading architecture…</span>
@@ -580,7 +579,7 @@
                 <div class="glass-panel" style="margin-bottom:20px;">
                     <div class="panel-header">
                         <h3><i class="fa-brands fa-bluetooth-b" style="color:#60a5fa;"></i> BLE Peripherals</h3>
-                        <button class="btn btn-icon" onclick="lab.fetchBleDevices()"><i class="fa-solid fa-rotate-right"></i></button>
+                        <button class="btn btn-icon" id="toggleBleBtn" onclick="labTogglePanel('bleDeviceGrid','toggleBleBtn','fetchBleDevices')" title="Show / Hide"><i class="fa-solid fa-eye"></i></button>
                     </div>
                     <div class="ble-device-grid" id="bleDeviceGrid">
                         <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Loading BLE devices…</span>
@@ -601,13 +600,6 @@
                         <div class="lab-stat-body">
                             <div class="lab-stat-num" id="statCriticalCount">—</div>
                             <div class="lab-stat-label">Critical Vulnerabilities</div>
-                        </div>
-                    </div>
-                    <div class="lab-stat">
-                        <i class="fa-solid fa-crosshairs" style="color:#f59e0b;"></i>
-                        <div class="lab-stat-body">
-                            <div class="lab-stat-num" id="statExploitCount">—</div>
-                            <div class="lab-stat-label">Exploits Executed</div>
                         </div>
                     </div>
                     <div class="lab-stat">
@@ -644,7 +636,7 @@
                 <div class="glass-panel" style="margin-bottom:20px;">
                     <div class="panel-header">
                         <h3><i class="fa-solid fa-list-check" style="color:#a78bfa;"></i> Attack Catalog</h3>
-                        <button class="btn btn-icon" onclick="lab.fetchLearningPath()"><i class="fa-solid fa-rotate-right"></i></button>
+                        <button class="btn btn-icon" id="toggleCatalogBtn" onclick="labTogglePanel('learningPath','toggleCatalogBtn','fetchLearningPath')" title="Show / Hide"><i class="fa-solid fa-eye"></i></button>
                     </div>
                     <div id="learningPath">
                         <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</span>
@@ -655,7 +647,7 @@
                 <div class="glass-panel">
                     <div class="panel-header">
                         <h3><i class="fa-solid fa-list-ul" style="color:#34d399;"></i> Lab Activity Log</h3>
-                        <button class="btn btn-icon" onclick="lab.fetchActivity()"><i class="fa-solid fa-rotate-right"></i></button>
+                        <button class="btn btn-icon" id="toggleLogBtn" onclick="labTogglePanel('labActivityLog','toggleLogBtn','fetchActivity')" title="Show / Hide"><i class="fa-solid fa-eye"></i></button>
                     </div>
                     <div id="labActivityLog" class="activity-log-container">
                         <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</span>
@@ -701,6 +693,27 @@
         </div>
     </div>
     <script>
+        // ===== Lab Panel Eye Toggle =====
+        function labTogglePanel(contentId, btnId, fetchFnName) {
+            const content = document.getElementById(contentId);
+            const btn = document.getElementById(btnId);
+            if (!content || !btn) return;
+            const icon = btn.querySelector('i');
+            const isHidden = content.style.display === 'none';
+            const isLoading = !!content.querySelector('.fa-spinner');
+            const labNs = (typeof lab !== 'undefined') ? lab : window.lab;
+            if (isHidden || isLoading) {
+                content.style.display = '';
+                icon.className = 'fa-solid fa-eye';
+                if (fetchFnName && labNs && typeof labNs[fetchFnName] === 'function') {
+                    labNs[fetchFnName]();
+                }
+            } else {
+                content.style.display = 'none';
+                icon.className = 'fa-solid fa-eye-slash';
+            }
+        }
+
         // ===== Mobile Menu Toggle =====
         function toggleMobileMenu() {
             const sidebar = document.getElementById('sidebar');

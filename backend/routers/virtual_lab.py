@@ -575,6 +575,7 @@ async def get_activity(
     entries = activity_log.get_all(limit=limit, event_type=event_type)
     return {
         "ok": True,
+        "server_time": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "count": len(entries),
         "entries": entries,
     }

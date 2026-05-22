@@ -117,10 +117,10 @@ const app = {
              this.fetchAISecurityScore(); // Keep AI score in sync with device state
          }, interval);
 
-         // Refresh hardware status every 2 seconds to quickly detect plugged dongles
+         // Refresh hardware status every 15 seconds to detect plugged dongles
          this.hwRefreshInterval = setInterval(() => {
              this.fetchHardwareStatus();
-         }, 2000);
+         }, 15000);
 
          console.log(`[AutoRefresh] Started - will refresh every ${interval / 1000} seconds`);
      },
@@ -561,7 +561,7 @@ const app = {
 
         // Set titles based on view
         const titles = {
-            'dashboard':    ['IoT Security Auditor', 'Monitor and secure your connected smart home environment'],
+            'dashboard':    ['Dashboard', 'Monitor and secure your connected smart home environment'],
             'devices':      ['Discovered Devices', 'Detailed list of all scanned networks and devices'],
             'rfid':         ['Access Control', 'Scan and manage RFID/NFC cards and key fobs'],
             'reports':      ['Security Reports', 'Generate and export security audit results'],
@@ -732,6 +732,14 @@ const app = {
         this.selectedDevice = this.devices.find(d => d.id === id);
         this.renderDevicesTable(); // update active row
         this.renderDeviceDetails();
+
+        // Reset AI / Deep Scan / Cred Test panels when switching devices
+        const aiRes = document.getElementById('aiDeviceAnalysis');
+        if (aiRes) aiRes.classList.add('hidden');
+        const deepRes = document.getElementById('deepScanResults');
+        if (deepRes) deepRes.classList.add('hidden');
+        const credPanel = document.getElementById('credTestPanel');
+        if (credPanel) credPanel.classList.add('hidden');
     },
 
     renderDeviceDetails() {
@@ -1241,14 +1249,14 @@ const app = {
             <h3 style="font-size: 14px; color: var(--text-muted); margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
                 <i class="fa-solid fa-list-check"></i> TECHNICAL PORT AUDIT
             </h3>
-            <div class="port-technical-table" style="background: rgba(0,0,0,0.2); border-radius: 8px; overflow: hidden;">
-                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <div class="port-technical-table" style="background: rgba(0,0,0,0.2); border-radius: 8px; overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 12px; table-layout: auto;">
                     <thead>
                         <tr style="background: rgba(255,255,255,0.05); text-align: left;">
-                            <th style="padding: 10px; border-bottom: 1px solid var(--border-color);">PORT</th>
-                            <th style="padding: 10px; border-bottom: 1px solid var(--border-color);">SERVICE / BANNER</th>
-                            <th style="padding: 10px; border-bottom: 1px solid var(--border-color);">STATUS</th>
-                            <th style="padding: 10px; border-bottom: 1px solid var(--border-color);">VULN</th>
+                            <th style="padding: 10px 8px; border-bottom: 1px solid var(--border-color); white-space: nowrap;">PORT</th>
+                            <th style="padding: 10px 8px; border-bottom: 1px solid var(--border-color);">SERVICE / BANNER</th>
+                            <th style="padding: 10px 8px; border-bottom: 1px solid var(--border-color); white-space: nowrap;">STATUS</th>
+                            <th style="padding: 10px 8px; border-bottom: 1px solid var(--border-color); white-space: nowrap;">VULN</th>
                         </tr>
                     </thead>
                     <tbody id="techAuditBody"></tbody>
@@ -1266,13 +1274,24 @@ const app = {
             const tr = document.createElement('tr');
             tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
 
+            const severity = vuln ? (vuln.severity || vuln.risk_level || 'RISK').toUpperCase() : null;
+            const sevColors = {
+                'CRITICAL': '#b91c1c',
+                'HIGH':     '#dc2626',
+                'RISK':     '#dc2626',
+                'MEDIUM':   '#f59e0b',
+                'LOW':      '#0ea5e9',
+            };
+            const sevColor = sevColors[severity] || 'var(--status-risk)';
+            const vulnBadge = vuln
+                ? `<span style="display: inline-block; padding: 3px 8px; background: ${sevColor}22; color: ${sevColor}; border: 1px solid ${sevColor}55; border-radius: 4px; font-size: 11px; font-weight: bold; white-space: nowrap;">${severity}</span>`
+                : `<span style="display: inline-block; padding: 3px 8px; background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.4); border-radius: 4px; font-size: 11px; font-weight: bold;">SAFE</span>`;
+
             tr.innerHTML = `
-                <td style="padding: 10px; font-family: monospace; font-weight: bold; color: var(--accent-blue);">${port}/tcp</td>
-                <td style="padding: 10px; color: var(--text-color);">${banner}</td>
-                <td style="padding: 10px;"><span style="color: #22c55e;"><i class="fa-solid fa-circle-dot" style="font-size: 8px;"></i> OPEN</span></td>
-                <td style="padding: 10px;">
-                    ${vuln ? `<span style="color: var(--status-risk); font-weight: bold;"><i class="fa-solid fa-triangle-exclamation"></i> ${vuln.severity}</span>` : '<span style="color: #22c55e;">SAFE</span>'}
-                </td>
+                <td style="padding: 10px 8px; font-family: monospace; font-weight: bold; color: var(--accent-blue); white-space: nowrap;">${port}/tcp</td>
+                <td style="padding: 10px 8px; color: var(--text-color); word-break: break-word;">${banner}</td>
+                <td style="padding: 10px 8px; white-space: nowrap;"><span style="color: #22c55e;"><i class="fa-solid fa-circle-dot" style="font-size: 8px;"></i> OPEN</span></td>
+                <td style="padding: 10px 8px; text-align: center;">${vulnBadge}</td>
             `;
             body.appendChild(tr);
         });

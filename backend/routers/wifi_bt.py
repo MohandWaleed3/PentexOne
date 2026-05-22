@@ -1293,6 +1293,28 @@ async def deep_port_scan(ip: str, db: Session = Depends(get_db)):
             risk_result = calculate_risk(open_ports, device.protocol)
             device.risk_level = risk_result["risk_level"]
             device.risk_score = risk_result["risk_score"]
+
+            # Persist Deep Scan vulnerabilities so they appear in reports & AI analysis
+            db.query(Vulnerability).filter(
+                Vulnerability.device_id == device.id,
+                Vulnerability.vuln_type.like("DEEP_SCAN_%")
+            ).delete(synchronize_session=False)
+
+            for vuln in vulnerabilities:
+                service = (vuln.get("service") or "UNKNOWN").upper()
+                vuln_type = f"DEEP_SCAN_{service}"
+                description = vuln.get("description") or ""
+                cve = vuln.get("cve")
+                if cve:
+                    description = f"[{cve}] {description}"
+                db.add(Vulnerability(
+                    device_id=device.id,
+                    vuln_type=vuln_type,
+                    severity=vuln.get("severity", "MEDIUM"),
+                    description=description[:500],
+                    port=vuln.get("port"),
+                    protocol="TCP"
+                ))
             db.commit()
 
         manager.broadcast({
