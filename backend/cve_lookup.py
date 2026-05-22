@@ -84,6 +84,10 @@ def _min_interval() -> float:
 
 
 # ─── Cache ──────────────────────────────────────────────────────────────
+EPSS_API = "https://api.first.org/data/v1/epss"
+EPSS_TTL_DAYS = 3   # EPSS scores update daily; refresh every 3 days
+
+
 def _init_cache() -> None:
     conn = sqlite3.connect(CACHE_PATH)
     conn.execute(
@@ -93,11 +97,108 @@ def _init_cache() -> None:
               fetched_at TEXT NOT NULL
            )"""
     )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS epss_cache (
+              cve_id TEXT PRIMARY KEY,
+              epss_score REAL,
+              epss_percentile REAL,
+              fetched_at TEXT NOT NULL
+           )"""
+    )
     conn.commit()
     conn.close()
 
 
 _init_cache()
+
+
+def _epss_cache_get(cve_id: str) -> Optional[Dict]:
+    conn = sqlite3.connect(CACHE_PATH)
+    try:
+        row = conn.execute(
+            "SELECT epss_score, epss_percentile, fetched_at FROM epss_cache WHERE cve_id = ?",
+            (cve_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    fetched_at = datetime.fromisoformat(row[2])
+    if fetched_at.tzinfo is None:
+        fetched_at = fetched_at.replace(tzinfo=timezone.utc)
+    if _utcnow() - fetched_at > timedelta(days=EPSS_TTL_DAYS):
+        return None
+    return {"epss_score": row[0], "epss_percentile": row[1]}
+
+
+def _epss_cache_put_batch(entries: List[Dict]) -> None:
+    conn = sqlite3.connect(CACHE_PATH)
+    now = _utcnow().isoformat()
+    try:
+        conn.executemany(
+            "REPLACE INTO epss_cache (cve_id, epss_score, epss_percentile, fetched_at) VALUES (?,?,?,?)",
+            [(e["cve_id"], e["epss_score"], e["epss_percentile"], now) for e in entries]
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def enrich_with_epss(cves: List[Dict]) -> List[Dict]:
+    """Add epss_score and epss_percentile to each CVE dict. Batch API call, cached."""
+    if not cves or _OFFLINE_ONLY:
+        return cves
+
+    # Split into cached and uncached
+    to_fetch: List[str] = []
+    cached_scores: Dict[str, Dict] = {}
+    for c in cves:
+        cid = c.get("cve_id")
+        if not cid:
+            continue
+        hit = _epss_cache_get(cid)
+        if hit:
+            cached_scores[cid] = hit
+        else:
+            to_fetch.append(cid)
+
+    # Batch fetch uncached (FIRST API allows up to 100 CVEs per request)
+    fetched: Dict[str, Dict] = {}
+    for i in range(0, len(to_fetch), 100):
+        batch = to_fetch[i:i + 100]
+        try:
+            resp = requests.get(
+                EPSS_API,
+                params={"cve": ",".join(batch)},
+                headers={"User-Agent": "PentexOne-Scanner/1.0"},
+                timeout=HTTP_TIMEOUT,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                entries = []
+                for item in data.get("data", []):
+                    cid = item.get("cve")
+                    score = float(item.get("epss", 0))
+                    pct = float(item.get("percentile", 0)) * 100
+                    fetched[cid] = {"epss_score": round(score, 4), "epss_percentile": round(pct, 1)}
+                    entries.append({"cve_id": cid, "epss_score": round(score, 4), "epss_percentile": round(pct, 1)})
+                if entries:
+                    _epss_cache_put_batch(entries)
+        except Exception as e:
+            logger.debug(f"EPSS fetch failed: {e}")
+
+    # Merge EPSS into CVE dicts
+    for c in cves:
+        cid = c.get("cve_id")
+        if not cid:
+            continue
+        epss = cached_scores.get(cid) or fetched.get(cid, {})
+        c["epss_score"] = epss.get("epss_score")
+        c["epss_percentile"] = epss.get("epss_percentile")
+        # Convenience flag for UI badge
+        c["actively_exploited"] = (epss.get("epss_score") or 0) >= 0.70
+
+    return cves
 
 
 def _cache_get(cpe: str) -> Optional[List[Dict]]:

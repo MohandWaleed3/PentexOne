@@ -1420,10 +1420,25 @@ const app = {
                 const cveId = v.cve_id || (cveMatch ? cveMatch[0] : null);
                 const nvdUrl = v.reference || (cveId ? `https://nvd.nist.gov/vuln/detail/${cveId}` : null);
 
+                const epssHtml = v.actively_exploited
+                    ? ` <span style="background:#7f1d1d; color:#fca5a5; border-radius:3px; padding:1px 5px; font-size:10px;">🔥 EXPLOITED ${v.epss_score !== null ? (v.epss_score * 100).toFixed(0) + '%' : ''}</span>`
+                    : (v.epss_score !== null && v.epss_score !== undefined
+                        ? ` <span style="font-size:10px; opacity:.65;">EPSS ${(v.epss_score * 100).toFixed(1)}%</span>`
+                        : '');
+
                 const titleHtml = isCve && nvdUrl
                     ? `<i class="fa-solid ${icon}"></i> <a href="${nvdUrl}" target="_blank" rel="noopener" style="color:inherit; text-decoration:underline;">${cveId}</a>`
                       + (v.cvss_score ? ` <span style="font-size:11px; opacity:.75;">CVSS ${v.cvss_score}</span>` : '')
+                      + epssHtml
                     : `<i class="fa-solid ${icon}"></i> ${vulnType}`;
+
+                const compliance = v.compliance || {};
+                const complianceTags = Object.entries(compliance)
+                    .map(([std, ctrl]) => `<span style="background:rgba(99,102,241,.15); color:#818cf8; border:1px solid rgba(99,102,241,.3); border-radius:3px; padding:1px 5px; font-size:10px; margin-right:3px;">${std} ${ctrl}</span>`)
+                    .join('');
+                const complianceHtml = complianceTags
+                    ? `<div style="margin-top:6px;"><i class="fa-solid fa-shield-halved" style="color:#818cf8; font-size:10px;"></i> <span style="font-size:10px; color:var(--text-muted);">Violates:</span> ${complianceTags}</div>`
+                    : '';
 
                 card.innerHTML = `
                     <div class="vuln-header">
@@ -1433,6 +1448,7 @@ const app = {
                     <div class="vuln-desc">
                         <p><strong>Port:</strong> ${v.port} (${v.protocol || 'TCP'})${isCve ? ' · <span style="color:#60a5fa;">NVD CVE</span>' : ''}</p>
                         <p>${v.description}</p>
+                        ${complianceHtml}
                     </div>
                     ${v.remediation ? `<div class="vuln-remediation"><strong>Remediation:</strong> ${v.remediation}</div>` : ''}
                 `;
