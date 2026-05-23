@@ -27,21 +27,69 @@ except ImportError:
 
 # ── BLE Analysis Constants ─────────────────────────────────────
 _BLE_RISKY_UUIDS: dict = {
+    # ── UART / serial channels (cleartext command interfaces) ──
     "6e400001-b5a3-f393-e0a9-e50e24dcca9e": ("BLE_UART_EXPOSED",       "High",   "Nordic UART service — cleartext serial channel with no authentication."),
     "0000ffe0-0000-1000-8000-00805f9b34fb": ("BLE_UART_EXPOSED",       "High",   "HM-10 UART service — cleartext serial data exposed without authentication."),
     "49535343-fe7d-4ae5-8fa9-9fafd205e455": ("BLE_UART_EXPOSED",       "Medium", "Microchip Transparent UART — unencrypted data channel."),
-    "0000180a-0000-1000-8000-00805f9b34fb": ("BLE_DEVICE_INFO_EXPOSED","Low",    "Device Information service readable without auth — exposes firmware version and model number."),
     "0000ffd0-0000-1000-8000-00805f9b34fb": ("BLE_UART_EXPOSED",       "High",   "Custom UART-like service — unencrypted data channel detected."),
+    "569a1101-b87f-490c-92cb-11ba5ea5167c": ("BLE_UART_EXPOSED",       "High",   "Laird vSP virtual serial port — unencrypted serial channel."),
+    "0000fff0-0000-1000-8000-00805f9b34fb": ("BLE_UART_EXPOSED",       "Medium", "Generic FFF0 serial-like service — frequently used as unauthenticated control channel."),
+    # ── Vendor OTA / firmware update endpoints ─────────────────
+    "8e400001-f315-4f60-9fb8-838830daea50": ("BLE_OTA_EXPOSED",        "High",   "Nordic Secure DFU service — firmware update endpoint exposed."),
+    "0000fe59-0000-1000-8000-00805f9b34fb": ("BLE_OTA_EXPOSED",        "High",   "Nordic DFU OTA service — unauthenticated firmware flashing possible."),
+    "0000fef5-0000-1000-8000-00805f9b34fb": ("BLE_OTA_EXPOSED",        "Medium", "Dialog OTA service — firmware update channel detected."),
+    # ── Information disclosure ─────────────────────────────────
+    "0000180a-0000-1000-8000-00805f9b34fb": ("BLE_DEVICE_INFO_EXPOSED","Low",    "Device Information service readable without auth — exposes firmware version and model number."),
+    "0000180f-0000-1000-8000-00805f9b34fb": ("BLE_BATTERY_INFO",       "Low",    "Battery Service readable — battery level disclosed publicly."),
+    # ── HID over GATT (keylogger / injection risk) ─────────────
+    "00001812-0000-1000-8000-00805f9b34fb": ("BLE_HID_EXPOSED",        "Medium", "HID-over-GATT service exposed — keystroke injection / capture possible if pairing weak."),
+    # ── Mesh / proxy (network exposure) ────────────────────────
+    "00001828-0000-1000-8000-00805f9b34fb": ("BLE_MESH_PROXY",         "Medium", "Mesh Proxy service exposed — gateway into Bluetooth Mesh network."),
+    "00001827-0000-1000-8000-00805f9b34fb": ("BLE_MESH_PROVISIONING",  "High",   "Mesh Provisioning service exposed — unprovisioned device can be hijacked."),
+    # ── Location / tracking ────────────────────────────────────
+    "00001819-0000-1000-8000-00805f9b34fb": ("BLE_LOCATION_EXPOSED",   "Medium", "Location & Navigation service exposed — GPS coordinates may be readable."),
 }
 
 _BLE_MANUFACTURERS: dict = {
-    0x004C: "Apple",    0x0006: "Microsoft", 0x0075: "Samsung",
-    0x00E0: "Google",   0x0059: "Nordic Semiconductor",
-    0x0157: "Xiaomi",   0x0499: "Ruuvi Innovations",
-    0x02E5: "Espressif",0x0171: "Amazon",
-    0x0087: "Garmin",   0x00D2: "Logitech",   0x0131: "Cypress",
-    0x0500: "BBC micro:bit", 0x004F: "Linear Tech",
-    0x038F: "Xiaomi Communications",
+    # ── Major platforms ────────────────────────────────────────
+    0x004C: "Apple",                 0x0006: "Microsoft",
+    0x00E0: "Google",                0x0075: "Samsung",
+    0x0171: "Amazon",                0x00C4: "LG Electronics",
+    0x0397: "GoPro",                 0x02E0: "Roku",
+    # ── Audio / headphones ─────────────────────────────────────
+    0x00F0: "Bose",                  0x00FE: "Beats Electronics",
+    0x008C: "Jabra (GN Netcom)",     0x0089: "Plantronics",
+    0x0046: "Sennheiser",            0x0335: "Sonos",
+    0x0234: "Sony",                  0x025C: "Bang & Olufsen",
+    0x0157: "Anker / Soundcore",
+    # ── Fitness / wearables ────────────────────────────────────
+    0x0087: "Garmin",                0x0091: "Polar Electro",
+    0x0118: "Fitbit",                0x028F: "Fitbit Wearables",
+    0x0339: "Xiaomi Mi Band",        0x0499: "Ruuvi",
+    0x010C: "Suunto",                0x0212: "Whoop",
+    # ── Chip / module makers ───────────────────────────────────
+    0x0059: "Nordic Semiconductor",  0x02E5: "Espressif",
+    0x000A: "Qualcomm CSR",          0x000F: "Broadcom",
+    0x001D: "Qualcomm",              0x0030: "STMicroelectronics",
+    0x0048: "Atmel",                 0x004F: "Linear Technology",
+    0x0131: "Cypress Semiconductor", 0x002A: "Texas Instruments",
+    0x015D: "Realtek",               0x0247: "Dialog Semiconductor",
+    0x0094: "Silicon Laboratories",  0x000D: "Texas Instruments",
+    # ── IoT / smart home ───────────────────────────────────────
+    0x0177: "Nest Labs",             0x0263: "Ring",
+    0x0265: "TP-Link",               0x0258: "Anker",
+    0x038F: "Xiaomi Communications", 0x015F: "BlueRadios",
+    0x0181: "Tile (BLE tracker)",    0x0500: "BBC micro:bit",
+    0x02D6: "TP-Link Smart Home",    0x0276: "Philips Hue",
+    0x011B: "Schlage Lock",          0x00B1: "August Smart Locks",
+    # ── Auto / vehicle ─────────────────────────────────────────
+    0x00CF: "Continental",           0x0148: "Tesla",
+    0x0226: "Toyota Motor",          0x0214: "BMW",
+    0x0309: "Audi",
+    # ── Legacy / classic ────────────────────────────────────────
+    0x0001: "Nokia Mobile",          0x0002: "Intel",
+    0x0003: "IBM",                   0x0004: "Toshiba",
+    0x0007: "Lucent",                0x0008: "Motorola",
 }
 
 # Apple Continuity sub-type → device category (parses 1st byte of manufacturer payload)
@@ -763,12 +811,20 @@ async def run_bluetooth_scan():
         manager.broadcast({"event": "scan_start", "type": "bluetooth",
                            "message": "Starting Bluetooth BLE scan..."})
 
-        # Discover with advertisement data (bleak ≥ 0.20)
+        # Active discovery (longer window catches devices with low advertising rate)
         try:
-            raw = await BleakScanner.discover(timeout=8.0, return_adv=True)
+            raw = await BleakScanner.discover(
+                timeout=15.0,
+                return_adv=True,
+                scanning_mode="active",
+            )
             discoveries = [(dev, adv) for dev, adv in raw.values()]
         except TypeError:
-            plain = await BleakScanner.discover(timeout=8.0)
+            # Older bleak: no return_adv / scanning_mode kwargs
+            try:
+                plain = await BleakScanner.discover(timeout=15.0, scanning_mode="active")
+            except TypeError:
+                plain = await BleakScanner.discover(timeout=15.0)
             discoveries = [(dev, None) for dev in plain]
 
         for dev, adv in discoveries:
