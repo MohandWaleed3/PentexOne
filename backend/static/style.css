@@ -735,10 +735,6 @@ input:disabled+.slider {
     max-width: 480px;
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
-    align-self: stretch;
-    -webkit-overflow-scrolling: touch;
-    scroll-behavior: smooth;
 }
 
 .panel-header {
@@ -754,8 +750,7 @@ input:disabled+.slider {
 
 /* ===== Table ===== */
 .table-responsive {
-    overflow: auto;
-    max-height: calc(100vh - 450px);
+    overflow: visible;
     min-height: 240px;
     -webkit-overflow-scrolling: touch;
 }
