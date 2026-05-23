@@ -736,7 +736,11 @@ input:disabled+.slider {
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    max-height: calc(100vh - 260px);
+    height: calc(100vh - 200px);
+    max-height: calc(100vh - 200px);
+    position: sticky;
+    top: 20px;
+    align-self: flex-start;
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;
 }

@@ -835,6 +835,10 @@ const app = {
         if (deepRes) deepRes.classList.add('hidden');
         const credPanel = document.getElementById('credTestPanel');
         if (credPanel) credPanel.classList.add('hidden');
+
+        // Scroll panel back to top
+        const panel = document.getElementById('deviceDetailsPanel');
+        if (panel) panel.scrollTop = 0;
     },
 
     renderDeviceDetails() {
