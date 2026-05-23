@@ -719,6 +719,8 @@ input:disabled+.slider {
     gap: 20px;
     flex: 1;
     min-height: 400px;
+    height: calc(100vh - 320px);
+    align-items: stretch;
 }
 
 .devices-list {
