@@ -249,9 +249,14 @@ class AISecurityEngine:
         Performs comprehensive AI analysis on a single device.
         Returns predicted vulnerabilities, risk assessment, and recommendations.
         """
+        # BLE devices use a separate analyzer — they have no TCP/IP services
+        # so network-style predictions (UPnP, default creds, RDP, etc.) don't apply.
+        if str(device.get("protocol", "")).lower() == "bluetooth":
+            return self._analyze_ble_device(device)
+
         # Identify device type
         device_type = self._identify_device_type(device)
-        
+
         # Predict vulnerabilities based on patterns
         predicted_vulns = self._predict_vulnerabilities(device, device_type)
         
@@ -329,6 +334,78 @@ class AISecurityEngine:
             "analysis_timestamp": datetime.utcnow().isoformat()
         }
     
+    def _analyze_ble_device(self, device: Dict[str, Any]) -> Dict[str, Any]:
+        """BLE-specific analysis: classify by vendor and report only real findings,
+        no fabricated network-style predictions."""
+        vendor   = device.get("vendor") or "Unknown BLE"
+        hostname = device.get("hostname") or "BLE device"
+        vulns    = device.get("vulnerabilities") or []
+        risk_lvl = str(device.get("risk_level", "SAFE")).upper()
+
+        # Classify by vendor string
+        v_low = vendor.lower()
+        if "airpods" in v_low:
+            ble_type = "Apple AirPods"
+        elif "watch" in v_low:
+            ble_type = "Apple Watch"
+        elif "iphone" in v_low or "nearby" in v_low or "handoff" in v_low:
+            ble_type = "Apple iPhone/iPad"
+        elif "find my" in v_low:
+            ble_type = "Apple Find My Tag"
+        elif "airdrop" in v_low or "airplay" in v_low:
+            ble_type = "Apple Media Device"
+        elif "samsung" in v_low:
+            ble_type = "Samsung BLE Device"
+        elif "xiaomi" in v_low:
+            ble_type = "Xiaomi BLE Device"
+        elif "nordic" in v_low or "espressif" in v_low:
+            ble_type = "IoT BLE Module"
+        elif vendor.startswith("Vendor_"):
+            ble_type = "Unidentified BLE Peripheral"
+        else:
+            ble_type = "BLE Peripheral"
+
+        # Build narrative from ACTUAL findings only
+        n = len(vulns)
+        if n == 0:
+            summary = (f"{hostname} ({ble_type}) — no BLE security issues detected. "
+                       f"Device either requires pairing or exposes no risky services.")
+        else:
+            top = vulns[0]
+            v_type = top.get("vuln_type", "BLE finding")
+            summary = (f"{hostname} ({ble_type}) — {n} BLE finding(s) detected. "
+                       f"Most critical: {v_type}.")
+
+        # Recommendations: protocol-appropriate
+        recs = []
+        vuln_types = {v.get("vuln_type", "") for v in vulns}
+        if "BLE_NO_PAIRING" in vuln_types:
+            recs.append({"priority": "High", "action":
+                "Enable pairing/bonding requirements in the device firmware."})
+        if "BLE_UART_EXPOSED" in vuln_types:
+            recs.append({"priority": "High", "action":
+                "Disable or password-protect the BLE UART service — it accepts cleartext commands."})
+        if "BLE_DEVICE_INFO_EXPOSED" in vuln_types:
+            recs.append({"priority": "Low", "action":
+                "Restrict Device Information characteristics to bonded peers only."})
+        if "BLE_HIGH_TX_POWER" in vuln_types:
+            recs.append({"priority": "Low", "action":
+                "Lower TX power to reduce physical tracking range."})
+
+        # Confidence: high when we have real findings, lower for empty SAFE devices
+        confidence = 0.9 if n > 0 else (0.7 if risk_lvl != "UNKNOWN" else 0.5)
+
+        return {
+            "device_type": ble_type,
+            "predicted_vulnerabilities": [],   # No fabricated predictions for BLE
+            "anomaly_score": 0.0,
+            "is_anomaly": False,
+            "recommendations": recs,
+            "confidence": confidence,
+            "dynamic_summary": summary,
+            "analysis_timestamp": datetime.utcnow().isoformat(),
+        }
+
     def _identify_device_type(self, device: Dict[str, Any]) -> str:
         """
         Uses pattern matching to identify device type.
