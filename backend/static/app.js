@@ -2359,7 +2359,7 @@ const app = {
             summaryDiv.innerHTML = `<i class="fa-solid fa-quote-left" style="opacity:0.3; margin-right:8px;"></i>${analysis.dynamic_summary}`;
         }
 
-        // Predicted vulnerabilities
+        // Predicted vulnerabilities — or actual findings for BLE/non-predicting protocols
         if (predictedVulnsDiv) {
             if (analysis.predicted_vulnerabilities && analysis.predicted_vulnerabilities.length > 0) {
                 predictedVulnsDiv.innerHTML = `
@@ -2372,10 +2372,25 @@ const app = {
                     `).join('')}
                 `;
             } else {
-                predictedVulnsDiv.innerHTML = `
-                    <span style="color: var(--status-safe); margin-top: 8px; display: block;">
-                        <i class="fa-solid fa-check"></i> No predicted vulnerabilities
-                    </span>`;
+                // Fall back to ACTUAL findings stored on the device — never claim "safe"
+                // when the device record itself carries vulnerabilities.
+                const actual = (this.selectedDevice && this.selectedDevice.vulnerabilities) || [];
+                if (actual.length > 0) {
+                    predictedVulnsDiv.innerHTML = `
+                        <strong style="display: block; margin-top: 8px;">Detected Findings:</strong>
+                        ${actual.map(v => `
+                            <div style="margin-top: 4px; padding: 4px 8px; background: rgba(239, 68, 68, 0.2); border-radius: 4px; font-size: 10px;">
+                                <i class="fa-solid fa-triangle-exclamation" style="color: var(--status-risk);"></i>
+                                ${v.vuln_type} <span style="opacity:0.7">(${v.severity || 'Medium'})</span>
+                            </div>
+                        `).join('')}
+                    `;
+                } else {
+                    predictedVulnsDiv.innerHTML = `
+                        <span style="color: var(--status-safe); margin-top: 8px; display: block;">
+                            <i class="fa-solid fa-check"></i> No vulnerabilities detected
+                        </span>`;
+                }
             }
         }
 
