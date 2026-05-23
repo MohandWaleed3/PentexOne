@@ -20,10 +20,79 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 try:
-    from bleak import BleakScanner
+    from bleak import BleakScanner, BleakClient
     HAS_BLEAK = True
 except ImportError:
     HAS_BLEAK = False
+
+# ── BLE Analysis Constants ─────────────────────────────────────
+_BLE_RISKY_UUIDS: dict = {
+    "6e400001-b5a3-f393-e0a9-e50e24dcca9e": ("BLE_UART_EXPOSED",       "High",   "Nordic UART service — cleartext serial channel with no authentication."),
+    "0000ffe0-0000-1000-8000-00805f9b34fb": ("BLE_UART_EXPOSED",       "High",   "HM-10 UART service — cleartext serial data exposed without authentication."),
+    "49535343-fe7d-4ae5-8fa9-9fafd205e455": ("BLE_UART_EXPOSED",       "Medium", "Microchip Transparent UART — unencrypted data channel."),
+    "0000180a-0000-1000-8000-00805f9b34fb": ("BLE_DEVICE_INFO_EXPOSED","Low",    "Device Information service readable without auth — exposes firmware version and model number."),
+    "0000ffd0-0000-1000-8000-00805f9b34fb": ("BLE_UART_EXPOSED",       "High",   "Custom UART-like service — unencrypted data channel detected."),
+}
+
+_BLE_MANUFACTURERS: dict = {
+    0x004C: "Apple",    0x0006: "Microsoft", 0x0075: "Samsung",
+    0x00E0: "Google",   0x0059: "Nordic Semiconductor",
+    0x0157: "Xiaomi",   0x0499: "Ruuvi Innovations",
+    0x02E5: "Espressif",0x0171: "Amazon",
+}
+
+
+async def _ble_analyze_advertisement(adv_data) -> tuple[list, str]:
+    """Parse advertisement data and return (vulns, vendor)."""
+    vulns: list = []
+    vendor = "Unknown BLE"
+
+    if adv_data and adv_data.manufacturer_data:
+        for cid in adv_data.manufacturer_data:
+            vendor = _BLE_MANUFACTURERS.get(cid, f"Vendor_{cid:04X}")
+            break
+
+    if adv_data and adv_data.service_uuids:
+        seen = set()
+        for uuid in adv_data.service_uuids:
+            entry = _BLE_RISKY_UUIDS.get(uuid.lower())
+            if entry and entry[0] not in seen:
+                vulns.append({"vuln_type": entry[0], "severity": entry[1], "description": entry[2]})
+                seen.add(entry[0])
+
+    if adv_data and adv_data.tx_power is not None and adv_data.tx_power > 4:
+        vulns.append({
+            "vuln_type": "BLE_HIGH_TX_POWER",
+            "severity": "Low",
+            "description": f"High TX power ({adv_data.tx_power} dBm) increases physical tracking range.",
+        })
+
+    return vulns, vendor
+
+
+async def _ble_try_gatt(mac: str) -> tuple[list, list]:
+    """Attempt unauthenticated GATT connection. Returns (vulns, service_uuids)."""
+    vulns: list = []
+    services: list = []
+    try:
+        async with BleakClient(mac, timeout=6.0) as client:
+            if client.is_connected:
+                vulns.append({
+                    "vuln_type": "BLE_NO_PAIRING",
+                    "severity": "High",
+                    "description": "Device accepts GATT connections without pairing or authentication.",
+                })
+                seen = set()
+                for svc in client.services:
+                    uuid = str(svc.uuid).lower()
+                    services.append(uuid)
+                    entry = _BLE_RISKY_UUIDS.get(uuid)
+                    if entry and entry[0] not in seen:
+                        vulns.append({"vuln_type": entry[0], "severity": entry[1], "description": entry[2]})
+                        seen.add(entry[0])
+    except Exception:
+        pass
+    return vulns, services
 
 from database import get_db, Device, Vulnerability, SessionLocal
 from models import ScanStatus
@@ -666,71 +735,87 @@ async def start_bluetooth_scan(background_tasks: BackgroundTasks):
 async def run_bluetooth_scan():
     db = SessionLocal()
     try:
-        manager.broadcast({
-            "event": "scan_start",
-            "type": "bluetooth",
-            "message": "Starting Bluetooth BLE scan..."
-        })
-        
-        devices = await BleakScanner.discover(timeout=5.0)
-        for dev in devices:
-            mac = dev.address
+        manager.broadcast({"event": "scan_start", "type": "bluetooth",
+                           "message": "Starting Bluetooth BLE scan..."})
+
+        # Discover with advertisement data (bleak ≥ 0.20)
+        try:
+            raw = await BleakScanner.discover(timeout=8.0, return_adv=True)
+            discoveries = [(dev, adv) for dev, adv in raw.values()]
+        except TypeError:
+            plain = await BleakScanner.discover(timeout=8.0)
+            discoveries = [(dev, None) for dev in plain]
+
+        for dev, adv in discoveries:
+            mac      = dev.address
             hostname = dev.name or "Unknown BLE Device"
-            # Some basics heuristic for BLE risks
-            risk_flags = {}
-            if "Smart" in hostname or "Lock" in hostname:
-                risk_flags["BLE_EXPOSED_CHARACTERISTICS"] = True
-            if "Unknown" in hostname:
-                risk_flags["BLE_NO_PAIRING"] = True
-                
-            risk_result = calculate_risk([], "Bluetooth", risk_flags)
-            
-            existing = db.query(Device).filter(Device.mac == mac, Device.protocol == "Bluetooth").first()
+
+            # 1. Advertisement analysis
+            adv_vulns, vendor = await _ble_analyze_advertisement(adv)
+
+            # 2. GATT unauthenticated connection attempt
+            manager.broadcast({"event": "scan_progress", "type": "bluetooth",
+                               "message": f"Probing {hostname} ({mac})..."})
+            gatt_vulns, svc_uuids = await _ble_try_gatt(mac)
+
+            # 3. Merge & deduplicate
+            seen_types: set = set()
+            all_vulns: list = []
+            for v in adv_vulns + gatt_vulns:
+                if v["vuln_type"] not in seen_types:
+                    all_vulns.append(v)
+                    seen_types.add(v["vuln_type"])
+
+            # 4. Risk scoring
+            sev_map = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1}
+            score = sum(sev_map.get(v["severity"], 1) * 15 for v in all_vulns)
+            score = min(score, 100)
+            if score >= 60:
+                risk_level = "RISK"
+            elif score >= 25:
+                risk_level = "MEDIUM"
+            else:
+                risk_level = "SAFE"
+
+            # 5. Persist
+            existing = db.query(Device).filter(
+                Device.mac == mac, Device.protocol == "Bluetooth").first()
             if existing:
                 device = existing
-                device.last_seen = datetime.utcnow()
-                device.risk_level = risk_result["risk_level"]
-                device.risk_score = risk_result["risk_score"]
-                device.hostname = hostname
+                device.last_seen  = datetime.utcnow()
+                device.hostname   = hostname
+                device.vendor     = vendor
+                device.risk_level = risk_level
+                device.risk_score = score
                 db.query(Vulnerability).filter(Vulnerability.device_id == device.id).delete()
             else:
                 device = Device(
-                    ip=f"BLE_{mac[-8:]}", # Mock IP
-                    mac=mac,
-                    hostname=hostname,
-                    vendor="Bluetooth LE",
-                    protocol="Bluetooth",
-                    os_guess="Firmware",
-                    open_ports="",
-                    risk_level=risk_result["risk_level"],
-                    risk_score=risk_result["risk_score"],
-                    last_seen=datetime.utcnow()
+                    ip=f"BLE_{mac.replace(':','')[-8:]}",
+                    mac=mac, hostname=hostname, vendor=vendor,
+                    protocol="Bluetooth", os_guess="BLE Firmware",
+                    open_ports=",".join(svc_uuids[:6]),
+                    risk_level=risk_level, risk_score=score,
+                    last_seen=datetime.utcnow(),
                 )
                 db.add(device)
                 db.flush()
-                
-            for v in risk_result["vulnerabilities"]:
+
+            for v in all_vulns:
                 db.add(Vulnerability(
                     device_id=device.id,
                     vuln_type=v["vuln_type"],
                     severity=v["severity"],
                     description=v["description"],
-                    protocol="Bluetooth"
+                    protocol="Bluetooth",
                 ))
             db.commit()
-            
-        manager.broadcast({
-            "event": "scan_complete",
-            "type": "bluetooth",
-            "message": f"Bluetooth scan complete. Found {len(devices)} devices."
-        })
+
+        manager.broadcast({"event": "scan_complete", "type": "bluetooth",
+                           "message": f"BLE scan complete. Found {len(discoveries)} devices."})
     except Exception as e:
         logger.error(f"BLE Scan Error: {e}")
-        manager.broadcast({
-            "event": "scan_error",
-            "type": "bluetooth",
-            "message": f"Error during Bluetooth scan: {str(e)}"
-        })
+        manager.broadcast({"event": "scan_error", "type": "bluetooth",
+                           "message": f"Bluetooth scan error: {str(e)}"})
     finally:
         db.close()
 
