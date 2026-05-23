@@ -39,6 +39,26 @@ _BLE_MANUFACTURERS: dict = {
     0x00E0: "Google",   0x0059: "Nordic Semiconductor",
     0x0157: "Xiaomi",   0x0499: "Ruuvi Innovations",
     0x02E5: "Espressif",0x0171: "Amazon",
+    0x0087: "Garmin",   0x00D2: "Logitech",   0x0131: "Cypress",
+    0x0500: "BBC micro:bit", 0x004F: "Linear Tech",
+    0x038F: "Xiaomi Communications",
+}
+
+# Apple Continuity sub-type → device category (parses 1st byte of manufacturer payload)
+_APPLE_SUBTYPES: dict = {
+    0x02: "Apple iBeacon",
+    0x05: "Apple AirDrop",
+    0x07: "Apple AirPods",
+    0x08: "Apple Siri",
+    0x09: "Apple AirPlay Audio",
+    0x0A: "Apple AirPlay Target",
+    0x0B: "Apple Watch",
+    0x0C: "Apple Handoff",
+    0x0D: "Apple Wi-Fi Settings",
+    0x0E: "Apple Hotspot",
+    0x0F: "Apple Wi-Fi Join",
+    0x10: "Apple Device (Nearby)",
+    0x12: "Apple Find My",
 }
 
 
@@ -48,8 +68,13 @@ async def _ble_analyze_advertisement(adv_data) -> tuple[list, str]:
     vendor = "Unknown BLE"
 
     if adv_data and adv_data.manufacturer_data:
-        for cid in adv_data.manufacturer_data:
-            vendor = _BLE_MANUFACTURERS.get(cid, f"Vendor_{cid:04X}")
+        for cid, payload in adv_data.manufacturer_data.items():
+            base = _BLE_MANUFACTURERS.get(cid, f"Vendor_{cid:04X}")
+            # Apple Continuity protocol — first byte of payload is the subtype
+            if cid == 0x004C and payload and len(payload) >= 1:
+                vendor = _APPLE_SUBTYPES.get(payload[0], "Apple Device")
+            else:
+                vendor = base
             break
 
     if adv_data and adv_data.service_uuids:
