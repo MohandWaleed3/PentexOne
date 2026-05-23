@@ -349,7 +349,16 @@ async def generate_pdf_report(db: Session = Depends(get_db)):
                 block.append(Paragraph(title, styles["VulnTitle"]))
                 if v.description:
                     block.append(Paragraph(v.description, styles["VulnDesc"]))
-                compliance = COMPLIANCE_MAP.get(v.vuln_type or "", {})
+                vt = v.vuln_type or ""
+                compliance = COMPLIANCE_MAP.get(vt, {})
+                if not compliance and vt.upper().startswith("CVE-"):
+                    sev_up = (v.severity or "MEDIUM").upper()
+                    if sev_up in ("CRITICAL", "HIGH"):
+                        compliance = {"PCI-DSS": "6.3.1", "NIST": "SI-2", "CIS": "7.1"}
+                    elif sev_up == "MEDIUM":
+                        compliance = {"NIST": "SI-2", "CIS": "7.1"}
+                    else:
+                        compliance = {"CIS": "7.1"}
                 if compliance:
                     refs = " &nbsp; ".join(
                         f"<font color='#6366f1'>{std}</font>&nbsp;{ctrl}"
