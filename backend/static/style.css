@@ -726,7 +726,9 @@ input:disabled+.slider {
 .dashboard-layout {
     display: flex;
     gap: 20px;
-    align-items: flex-start;
+    /* stretch: when side-by-side, both columns share the taller one's height,
+       so the devices list grows to match a tall details panel. */
+    align-items: stretch;
     min-height: 400px;
 }
 
@@ -735,7 +737,8 @@ input:disabled+.slider {
     display: flex;
     flex-direction: column;
     min-width: 0;
-    /* Allow table shrinking */
+    /* Allow the inner table to shrink and fill the column height */
+    min-height: 0;
 }
 
 .device-details {
@@ -759,9 +762,9 @@ input:disabled+.slider {
 
 /* ===== Table ===== */
 .table-responsive {
-    /* Bound the device list so the page doesn't grow forever with many
-       devices; the list scrolls internally instead. Adapts to screen height. */
-    max-height: 55vh;
+    /* Side-by-side: fill the column so the list is as tall as the details
+       panel and scrolls internally. (Stacked/phone layouts override below.) */
+    flex: 1 1 0;
     overflow-y: auto;
     overflow-x: auto;
     min-height: 240px;
@@ -1401,6 +1404,12 @@ tr:hover td {
         min-width: 100%;
     }
 
+    /* Stacked: no column to fill, so go back to a bounded internal scroll */
+    .table-responsive {
+        flex: 0 1 auto;
+        max-height: 55vh;
+    }
+
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
     }
@@ -1514,8 +1523,9 @@ tr:hover td {
     }
 
     /* Phones: let the table grow with the page (natural page scroll, no nested
-       scroll). max-height:none cancels the desktop cap so rows never spill. */
+       scroll). flex:none + max-height:none cancel the desktop fill/cap. */
     .table-responsive {
+        flex: none;
         overflow-x: auto;
         overflow-y: visible;
         max-height: none;
@@ -3943,6 +3953,13 @@ body.lightweight-mode .signal-bar {
     .device-details {
         min-width: 300px;
         max-width: 420px;
+    }
+
+    /* Side-by-side again here: re-assert fill so the list matches the details
+       panel height (overrides the stacked max-width:1024 rule above). */
+    .table-responsive {
+        flex: 1 1 0;
+        max-height: none;
     }
 
     /* --- Touch sizing (normally provided by the unused pointer:coarse block) --- */
