@@ -1371,12 +1371,6 @@ tr:hover td {
 }
 
 /* Short viewports — keep the devices table visible */
-@media (max-height: 800px) {
-    .table-responsive {
-        max-height: 320px;
-    }
-}
-
 /* Tablets */
 @media (max-width: 1024px) {
     .dashboard-layout {
@@ -1499,9 +1493,10 @@ tr:hover td {
         min-width: unset;
     }
 
-    /* Device table scrolls horizontally */
+    /* Device table scrolls horizontally on narrow screens; grows vertically with content */
     .table-responsive {
-        max-height: 350px;
+        overflow-x: auto;
+        overflow-y: visible;
         min-height: 240px;
     }
 
