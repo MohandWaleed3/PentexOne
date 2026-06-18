@@ -785,10 +785,12 @@
             }, 300);
         }
 
-        // Auto-close sidebar when a nav link is clicked on mobile
+        // Auto-close sidebar when a nav link is clicked while it's an open
+        // drawer (any breakpoint: phones AND the 7" kiosk). On desktop the
+        // sidebar is static and never carries the 'open' class, so this no-ops.
         document.querySelectorAll('.nav-links a').forEach(link => {
             link.addEventListener('click', () => {
-                if (window.innerWidth <= 768) {
+                if (document.getElementById('sidebar').classList.contains('open')) {
                     closeMobileMenu();
                 }
             });

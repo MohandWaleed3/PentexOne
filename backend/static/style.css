@@ -3830,3 +3830,151 @@ body.lightweight-mode .signal-bar {
         font-size: 13px;
     }
 }
+
+/* ============================================================
+   7" TOUCHSCREEN KIOSK (Raspberry Pi, landscape ~1024x600 / 800x480)
+   Targeted by resolution, NOT by pointer/hover — these panels often
+   report as a mouse, so (pointer: coarse) never matches. Placed last so
+   it overrides the width-only breakpoints above.
+   ============================================================ */
+@media (min-width: 769px) and (max-width: 1024px) and (max-height: 650px) {
+
+    /* --- Reclaim horizontal space: sidebar becomes an off-canvas drawer --- */
+    .mobile-menu-toggle {
+        display: flex;
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 260px;
+        transform: translateX(-100%);
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+        padding-top: 64px;
+        z-index: 1000;
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+    }
+
+    .sidebar-overlay.active {
+        display: block;
+    }
+
+    /* Touch-sized nav rows inside the drawer */
+    .nav-links a {
+        min-height: var(--touch-min);
+        display: flex;
+        align-items: center;
+    }
+
+    /* --- Compact vertical chrome to fit the short (600px) screen --- */
+    .main-content {
+        padding: 10px 16px;
+        padding-top: 56px;
+        /* clear the hamburger */
+        gap: 12px;
+    }
+
+    header.top-nav {
+        margin-bottom: 4px;
+    }
+
+    .title-area h1 {
+        font-size: 18px;
+    }
+
+    .subtitle {
+        display: none;
+    }
+
+    /* Stat cards in a single row instead of stacking */
+    .stats-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+    }
+
+    .stat-card {
+        padding: 10px 12px;
+    }
+
+    .stat-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 15px;
+    }
+
+    .stat-info h2 {
+        font-size: 18px;
+    }
+
+    .glass-panel {
+        padding: 14px;
+        border-radius: 12px;
+    }
+
+    .chart-container,
+    .chart-container.tall {
+        height: 160px;
+    }
+
+    /* --- Keep devices + details SIDE BY SIDE so the page stays short --- */
+    .dashboard-layout {
+        flex-direction: row;
+        min-height: auto;
+    }
+
+    .device-details {
+        min-width: 300px;
+        max-width: 420px;
+    }
+
+    /* Let the table scroll horizontally if its columns ever overflow */
+    .table-responsive {
+        overflow-x: auto;
+    }
+
+    /* --- Touch sizing (normally provided by the unused pointer:coarse block) --- */
+    input,
+    select,
+    textarea {
+        font-size: 16px;
+    }
+
+    input[type="number"] {
+        min-height: var(--touch-min);
+    }
+
+    input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+    }
+
+    .protocol-buttons .btn {
+        min-height: 48px;
+    }
+
+    /* Drop sticky hover states (touch reported as mouse leaves them stuck) */
+    tr:hover td {
+        background: transparent;
+    }
+
+    .nav-links a:hover {
+        background: transparent;
+        color: var(--text-muted);
+    }
+
+    /* Thinner scrollbars to save space */
+    ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 4px;
+    }
+}
