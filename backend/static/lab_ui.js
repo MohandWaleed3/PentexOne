@@ -186,7 +186,7 @@ const lab = (function () {
   async function quickScan() {
     toast('Discovering Wi-Fi lab devices…', 'info');
     const r = await api('POST', '/lab/quick-scan');
-    toast(r.message || 'Done', 'success');
+    toast(r.message || 'Done', r.ok === false ? 'error' : 'success');
     fetchStats();
     refreshAppDashboard();
   }
@@ -194,7 +194,7 @@ const lab = (function () {
   async function bleInject() {
     toast('Discovering BLE lab devices…', 'info');
     const r = await api('POST', '/lab/ble-inject');
-    toast(r.message || 'Done', 'success');
+    toast(r.message || 'Done', r.ok === false ? 'error' : 'success');
     fetchStats();
     refreshAppDashboard();
   }

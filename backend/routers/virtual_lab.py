@@ -40,7 +40,7 @@ from lab_registry import (
     tag_hostname,
     get_lab_summary,
 )
-from lab_process_manager import lab_manager
+from lab_process_manager import lab_manager, LabStatus
 from lab_activity_log import activity_log, EventType
 
 router = APIRouter(prefix="/lab", tags=["Virtual Lab"])
@@ -317,6 +317,14 @@ async def quick_scan(db: Session = Depends(get_db)):
     injects only the devices that are actually responding into the DB.
     Returns a warning for any containers that are offline.
     """
+    # Refuse to inject unless the Wi-Fi lab is actually running.
+    if lab_manager.status()["wifi_lab"]["status"] != LabStatus.RUNNING:
+        return {
+            "ok": False,
+            "message": "Wi-Fi lab is not running — start it first, then run Quick Discovery.",
+            "inserted": 0, "updated": 0, "skipped": [],
+        }
+
     inserted, updated, skipped = 0, 0, []
 
     for dev in LAB_DEVICES:
@@ -573,8 +581,16 @@ async def get_ble_device(address: str):
 async def ble_inject(db: Session = Depends(get_db)):
     """
     Inject all registered BLE lab devices into the Device DB as if they were
-    discovered by the Bluetooth scanner. Useful for demos when bumble is not running.
+    discovered by the Bluetooth scanner. Requires the BLE lab to be running.
     """
+    # Refuse to inject unless the BLE lab is actually running.
+    if lab_manager.status()["ble_lab"]["status"] != LabStatus.RUNNING:
+        return {
+            "ok": False,
+            "message": "BLE lab is not running — start it first, then run Quick Discovery.",
+            "inserted": 0, "updated": 0,
+        }
+
     inserted, updated = 0, 0
 
     for dev in BLE_DEVICES:
