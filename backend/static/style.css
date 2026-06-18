@@ -200,6 +200,15 @@ img.brand-logo {
     /* Prevent flex overflow */
 }
 
+/* While drag-scrolling (touch_scroll.js), suppress text selection and the
+   native smooth-scroll so finger dragging tracks 1:1 with the content. */
+.main-content.drag-scrolling {
+    scroll-behavior: auto;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grabbing;
+}
+
 header.top-nav {
     display: flex;
     justify-content: space-between;
