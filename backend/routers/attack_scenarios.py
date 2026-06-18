@@ -43,6 +43,7 @@ from pydantic import BaseModel
 from lab_activity_log import activity_log, EventType
 from lab_registry import LAB_DEVICES, BLE_DEVICES
 from lab_education import TUTORIALS, HINTS, calculate_score, get_difficulty_path
+from lab_process_manager import lab_manager, LabStatus
 
 router = APIRouter(prefix="/attacks", tags=["Attack Scenarios"])
 
@@ -881,11 +882,24 @@ async def run_scenario(scenario_id: str):
     if not executor:
         raise HTTPException(status_code=501, detail=f"No executor for '{scenario_id}'")
 
+    # Refuse to attack a lab that isn't running. BLE scenarios need the BLE lab;
+    # Wi-Fi scenarios need the Wi-Fi (Docker) lab.
+    is_ble = scenario_id.startswith("ble")
+    lab_key = "ble_lab" if is_ble else "wifi_lab"
+    lab_label = "BLE" if is_ble else "Wi-Fi"
+
     start_ts = time.time()
-    try:
-        result = await asyncio.to_thread(executor, scenario)
-    except Exception as e:
-        result = {"success": False, "summary": f"Execution error: {e}", "evidence": []}
+    if lab_manager.status()[lab_key]["status"] != LabStatus.RUNNING:
+        result = {
+            "success": False,
+            "summary": f"{lab_label} lab is not running — start it before launching this attack.",
+            "evidence": [],
+        }
+    else:
+        try:
+            result = await asyncio.to_thread(executor, scenario)
+        except Exception as e:
+            result = {"success": False, "summary": f"Execution error: {e}", "evidence": []}
 
     elapsed = round(time.time() - start_ts, 2)
 
