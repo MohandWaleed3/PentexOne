@@ -726,6 +726,13 @@ input:disabled+.slider {
     cursor: not-allowed;
 }
 
+/* White border around the Simulation Mode toggle (scoped — other toggles
+   keep their default border). Stays white in both on/off states. */
+#globalSimulationToggle + .slider,
+#globalSimulationToggle:checked + .slider {
+    border: 2px solid #fff;
+}
+
 /* ===== Dashboard Layout ===== */
 .dashboard-layout {
     display: flex;
@@ -4118,6 +4125,24 @@ body.lightweight-mode .signal-bar {
     .section-header {
         font-size: 17px;
         font-weight: 700;
+    }
+
+    /* Virtual Lab status cards — the tiny metadata (containers/subnets,
+       status, uptime) that was still 11px. */
+    .lab-card-info h3 {
+        font-size: 16px;
+    }
+
+    .lab-card-info p {
+        font-size: 13px;
+    }
+
+    .lab-status-label {
+        font-size: 13px;
+    }
+
+    .lab-uptime-label {
+        font-size: 13px;
     }
 
     /* --- Touch sizing (normally provided by the unused pointer:coarse block) --- */
