@@ -651,16 +651,18 @@
                     </div>
                 </div>
 
-                <!-- ── Attack Scenarios ── -->
+                <!-- ── Attack Catalog (single view — Attack Scenarios merged in) ── -->
                 <div class="glass-panel" style="margin-bottom:20px;">
                     <div class="panel-header">
-                        <h3><i class="fa-solid fa-crosshairs" style="color:#ef4444;"></i> Attack Scenarios</h3>
+                        <h3><i class="fa-solid fa-list-check" style="color:#a78bfa;"></i> Attack Catalog</h3>
+                        <button class="btn btn-icon" id="toggleCatalogBtn" onclick="labTogglePanel('learningPath','toggleCatalogBtn','fetchLearningPath')" title="Show / Hide"><i class="fa-solid fa-eye"></i></button>
                     </div>
-                    <div id="scenarioList" class="scenario-list">
-                        <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Loading scenarios…</span>
+                    <div id="learningPath">
+                        <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</span>
                     </div>
 
-                    <!-- Result Panel -->
+                    <!-- Attack Output — shared result panel; runScenario() writes the
+                         exploit terminal output here when you Launch a catalog card. -->
                     <div id="scenarioResultPanel" class="scenario-result-panel hidden" style="margin-top:16px;">
                         <div class="panel-header">
                             <h4><i class="fa-solid fa-terminal" style="color:#60a5fa;"></i> Attack Output</h4>
@@ -669,17 +671,6 @@
                             </button>
                         </div>
                         <div id="scenarioResultContent"></div>
-                    </div>
-                </div>
-
-                <!-- ── Learning Path ── -->
-                <div class="glass-panel" style="margin-bottom:20px;">
-                    <div class="panel-header">
-                        <h3><i class="fa-solid fa-list-check" style="color:#a78bfa;"></i> Attack Catalog</h3>
-                        <button class="btn btn-icon" id="toggleCatalogBtn" onclick="labTogglePanel('learningPath','toggleCatalogBtn','fetchLearningPath')" title="Show / Hide"><i class="fa-solid fa-eye"></i></button>
-                    </div>
-                    <div id="learningPath">
-                        <span class="loading-text"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</span>
                     </div>
                 </div>
 

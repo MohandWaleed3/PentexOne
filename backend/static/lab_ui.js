@@ -716,12 +716,13 @@ const lab = (function () {
                         <span class="catalog-card-id">${sc.id}</span>
                         ${protoIcon(sc)}
                       </div>
-                      <div class="catalog-card-target">
-                        <i class="fa-solid fa-crosshairs"></i> ${escHtml(sc.target_device || sc.target_address || '—')}
+                      <div class="catalog-card-title">${escHtml(sc.title || sc.target_device || '—')}</div>
+                      <div class="catalog-card-meta">
+                        ${difficultyBadge(sc.difficulty)}
+                        <span class="catalog-card-proto">${protocolIcon(sc.protocol)} ${escHtml(sc.protocol || '')}</span>
+                        <span class="catalog-card-tgt"><i class="fa-solid fa-crosshairs"></i> ${escHtml(sc.target_device || sc.target_address || '')}</span>
                       </div>
-                      <div class="catalog-card-attack">
-                        ${escHtml(prettyVulnClass(sc.vulnerability_class))}
-                      </div>
+                      <div class="catalog-card-owasp">${escHtml(sc.owasp_category || prettyVulnClass(sc.vulnerability_class))}</div>
                       <div class="catalog-card-launch">
                         <i class="fa-solid fa-play"></i> Launch
                       </div>
@@ -757,7 +758,6 @@ const lab = (function () {
     fetchStatus();
     fetchArchitecture();
     fetchBleDevices();
-    fetchScenarios();
     fetchActivity();
     fetchStats();
     fetchLearningPath();
