@@ -53,6 +53,10 @@ body {
     overflow: hidden;
     /* Improve touch scrolling */
     -webkit-overflow-scrolling: touch;
+    /* Crisper text edges on low-density kiosk panels */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
 }
 
 .app-container {
@@ -4017,35 +4021,40 @@ body.lightweight-mode .signal-bar {
         max-height: none;
     }
 
-    /* --- Readability pass: bump the small text that's hard to read on a
-       physically small 7" panel, and give it more breathing room. --- */
+    /* --- Readability pass: bigger AND heavier text. On a low-density 7" panel a
+       heavier weight gives each glyph more pixels, so it reads clearer. --- */
 
     /* Device list */
     th {
-        font-size: 13px;
+        font-size: 13.5px;
+        font-weight: 600;
     }
 
     td {
-        font-size: 15px;
+        font-size: 16px;
+        font-weight: 500;
         padding: 15px 12px;
         line-height: 1.45;
     }
 
     /* Device details header + metrics */
     .detail-title h2 {
-        font-size: 19px;
+        font-size: 20px;
     }
 
     .detail-title p {
-        font-size: 14px;
+        font-size: 14.5px;
+        font-weight: 500;
     }
 
     .metric .label {
-        font-size: 12px;
+        font-size: 12.5px;
+        font-weight: 600;
     }
 
     .metric .value {
-        font-size: 15px;
+        font-size: 16px;
+        font-weight: 600;
     }
 
     .risk-badge {
@@ -4055,35 +4064,60 @@ body.lightweight-mode .signal-bar {
 
     /* AI analysis + prioritized action plan text */
     #aiDynamicSummary {
-        font-size: 15px !important;
+        font-size: 16px !important;
         line-height: 1.7 !important;
     }
 
     .action-title {
-        font-size: 15px;
+        font-size: 16px;
+        font-weight: 700;
     }
 
     .action-meta {
-        font-size: 12px;
+        font-size: 12.5px;
     }
 
     .action-why,
     .action-steps {
-        font-size: 13px;
+        font-size: 14px;
+        font-weight: 500;
         line-height: 1.6;
     }
 
     .action-reduction {
-        font-size: 14px;
+        font-size: 15px;
+    }
+
+    /* Attack Catalog cards (the main view in the lab) */
+    .catalog-card-title {
+        font-size: 15px;
+        font-weight: 700;
+    }
+
+    .catalog-card-meta {
+        font-size: 12.5px;
+    }
+
+    .catalog-card-owasp {
+        font-size: 12px;
+    }
+
+    .catalog-card-launch {
+        font-size: 12.5px;
+    }
+
+    .catalog-card-id {
+        font-size: 12px;
     }
 
     /* Headers */
     .panel-header h2 {
-        font-size: 18px;
+        font-size: 19px;
     }
 
     .section-header {
-        font-size: 16px;
+        font-size: 17px;
+        font-weight: 700;
     }
 
     /* --- Touch sizing (normally provided by the unused pointer:coarse block) --- */
