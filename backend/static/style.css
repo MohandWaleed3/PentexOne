@@ -860,6 +860,21 @@ tr:hover td {
 /* ===== AI Prioritized Action Plan ===== */
 .action-plan-panel { padding: 18px; }
 
+/* Collapsible header: tap the title to reveal the plan */
+.action-plan-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.action-plan-chevron {
+    font-size: 13px;
+    color: var(--text-muted);
+    transition: transform 0.2s ease;
+}
+.action-plan-panel:not(.collapsed) .action-plan-chevron {
+    transform: rotate(90deg);
+}
+
 .action-card {
     display: grid;
     grid-template-columns: 44px 1fr auto;
@@ -3960,6 +3975,75 @@ body.lightweight-mode .signal-bar {
     .table-responsive {
         flex: 1 1 0;
         max-height: none;
+    }
+
+    /* --- Readability pass: bump the small text that's hard to read on a
+       physically small 7" panel, and give it more breathing room. --- */
+
+    /* Device list */
+    th {
+        font-size: 13px;
+    }
+
+    td {
+        font-size: 15px;
+        padding: 15px 12px;
+        line-height: 1.45;
+    }
+
+    /* Device details header + metrics */
+    .detail-title h2 {
+        font-size: 19px;
+    }
+
+    .detail-title p {
+        font-size: 14px;
+    }
+
+    .metric .label {
+        font-size: 12px;
+    }
+
+    .metric .value {
+        font-size: 15px;
+    }
+
+    .risk-badge {
+        font-size: 13px;
+        padding: 5px 14px;
+    }
+
+    /* AI analysis + prioritized action plan text */
+    #aiDynamicSummary {
+        font-size: 15px !important;
+        line-height: 1.7 !important;
+    }
+
+    .action-title {
+        font-size: 15px;
+    }
+
+    .action-meta {
+        font-size: 12px;
+    }
+
+    .action-why,
+    .action-steps {
+        font-size: 13px;
+        line-height: 1.6;
+    }
+
+    .action-reduction {
+        font-size: 14px;
+    }
+
+    /* Headers */
+    .panel-header h2 {
+        font-size: 18px;
+    }
+
+    .section-header {
+        font-size: 16px;
     }
 
     /* --- Touch sizing (normally provided by the unused pointer:coarse block) --- */

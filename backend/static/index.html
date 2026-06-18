@@ -348,26 +348,29 @@
                     </div>
                 </div>
 
-                <!-- AI Prioritized Action Plan (moved to bottom — natural position after devices/scans) -->
-                <div class="glass-panel action-plan-panel" id="actionPlanPanel" style="margin-top: 20px;">
+                <!-- AI Prioritized Action Plan (collapsible — tap the title to reveal) -->
+                <div class="glass-panel action-plan-panel collapsed" id="actionPlanPanel" style="margin-top: 20px;">
                     <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
-                        <h3 class="section-header" style="margin:0;">
+                        <h3 class="section-header action-plan-toggle" onclick="toggleActionPlan()" style="margin:0; cursor:pointer; user-select:none;">
+                            <i class="fa-solid fa-chevron-right action-plan-chevron"></i>
                             <i class="fa-solid fa-list-check" style="color: var(--accent-purple);"></i>
                             AI Prioritized Action Plan
                         </h3>
                         <div style="display:flex; gap:8px; align-items:center;">
                             <span id="actionPlanSummary" style="font-size:12px; color:var(--text-muted);"></span>
-                            <button class="btn btn-sm btn-outline-purple" onclick="app.fetchActionPlan()">
+                            <button class="btn btn-sm btn-outline-purple" onclick="app.fetchActionPlan(); setActionPlanOpen(true)">
                                 <i class="fa-solid fa-rotate"></i> Refresh
                             </button>
                         </div>
                     </div>
-                    <p style="color:var(--text-muted); font-size:12px; margin:8px 0 16px;">
-                        Ranked by <strong>(exploitability × impact) ÷ effort</strong>. Fix from top to bottom for maximum risk reduction in the shortest time.
-                    </p>
-                    <div id="actionPlanList">
-                        <div class="loading-text" style="text-align:center; padding:20px;">
-                            <i class="fa-solid fa-spinner fa-spin"></i> Scan some devices first to generate a plan.
+                    <div id="actionPlanBody" class="hidden">
+                        <p style="color:var(--text-muted); font-size:12px; margin:8px 0 16px;">
+                            Ranked by <strong>(exploitability × impact) ÷ effort</strong>. Fix from top to bottom for maximum risk reduction in the shortest time.
+                        </p>
+                        <div id="actionPlanList">
+                            <div class="loading-text" style="text-align:center; padding:20px;">
+                                <i class="fa-solid fa-spinner fa-spin"></i> Scan some devices first to generate a plan.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -731,6 +734,19 @@
         </div>
     </div>
     <script>
+        // ===== AI Prioritized Action Plan collapse toggle =====
+        function setActionPlanOpen(open) {
+            const body = document.getElementById('actionPlanBody');
+            const panel = document.getElementById('actionPlanPanel');
+            if (!body || !panel) return;
+            body.classList.toggle('hidden', !open);
+            panel.classList.toggle('collapsed', !open);
+        }
+        function toggleActionPlan() {
+            const body = document.getElementById('actionPlanBody');
+            if (body) setActionPlanOpen(body.classList.contains('hidden'));
+        }
+
         // ===== Lab Panel Eye Toggle =====
         function labTogglePanel(contentId, btnId, fetchFnName) {
             const content = document.getElementById(contentId);
