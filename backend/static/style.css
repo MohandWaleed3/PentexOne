@@ -759,9 +759,20 @@ input:disabled+.slider {
 
 /* ===== Table ===== */
 .table-responsive {
-    overflow: visible;
+    /* Bound the device list so the page doesn't grow forever with many
+       devices; the list scrolls internally instead. Adapts to screen height. */
+    max-height: 55vh;
+    overflow-y: auto;
+    overflow-x: auto;
     min-height: 240px;
     -webkit-overflow-scrolling: touch;
+}
+
+/* Keep column headers visible while the device list scrolls */
+.table-responsive thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
 }
 
 table {
@@ -1502,10 +1513,12 @@ tr:hover td {
         min-width: unset;
     }
 
-    /* Device table scrolls horizontally on narrow screens; grows vertically with content */
+    /* Phones: let the table grow with the page (natural page scroll, no nested
+       scroll). max-height:none cancels the desktop cap so rows never spill. */
     .table-responsive {
         overflow-x: auto;
         overflow-y: visible;
+        max-height: none;
         min-height: 240px;
     }
 
@@ -3930,11 +3943,6 @@ body.lightweight-mode .signal-bar {
     .device-details {
         min-width: 300px;
         max-width: 420px;
-    }
-
-    /* Let the table scroll horizontally if its columns ever overflow */
-    .table-responsive {
-        overflow-x: auto;
     }
 
     /* --- Touch sizing (normally provided by the unused pointer:coarse block) --- */

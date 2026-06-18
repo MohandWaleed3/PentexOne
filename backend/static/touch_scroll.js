@@ -43,8 +43,10 @@
             startScroll = target.scrollTop;
             dragging = true;
             moved = false;
-            // Keep receiving move/up events even if the finger leaves the panel.
-            try { root.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+            // NB: do NOT capture the pointer here. A plain tap must stay
+            // untouched so its click reaches the row's onclick. We only capture
+            // once a real drag starts (below), since Chromium re-targets the
+            // click to the capturing element and would swallow row taps.
         });
 
         root.addEventListener('pointermove', function (e) {
@@ -54,6 +56,9 @@
             if (!moved) {
                 moved = true;
                 root.classList.add('drag-scrolling'); // disables text selection
+                // Now that it's a drag, capture so it keeps tracking even if the
+                // finger leaves the panel.
+                try { root.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
             }
             target.scrollTop = startScroll - dy;
             e.preventDefault();
